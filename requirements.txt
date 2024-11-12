@@ -1,0 +1,8 @@
+h5py
+hydra-core
+numpy==1.26
+torch
+torcheval
+tqdm
+wandb
+
