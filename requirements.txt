@@ -3,6 +3,9 @@ hydra-core
 numpy==1.26
 torch
 torcheval
+torchvision
 tqdm
 wandb
+vizdoom
+gymnasium
 

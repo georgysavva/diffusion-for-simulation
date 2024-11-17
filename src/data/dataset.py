@@ -1,7 +1,7 @@
-from collections import Counter
 import multiprocessing as mp
-from pathlib import Path
 import shutil
+from collections import Counter
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import h5py
@@ -10,10 +10,11 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset as TorchDataset
 
+from utils import StateDictMixin
+
 from .episode import Episode
 from .segment import Segment, SegmentId
 from .utils import make_segment
-from utils import StateDictMixin
 
 
 class Dataset(StateDictMixin, TorchDataset):
@@ -34,8 +35,6 @@ class Dataset(StateDictMixin, TorchDataset):
         self.num_steps = None
         self.start_idx = None
         self.lengths = None
-        self.counter_rew = None
-        self.counter_end = None
 
         self._directory = Path(directory).expanduser()
         self._name = name if name is not None else self._directory.stem
