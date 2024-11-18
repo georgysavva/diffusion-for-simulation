@@ -1,0 +1,6 @@
+train:
+  id: doom
+num_actions: 5
+path_data: null # TO DEFINE
+
+keymap: doom

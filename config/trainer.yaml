@@ -1,7 +1,7 @@
 defaults:
   - _self_
-  - env: csgo
-  - generative_model: csgo_diamond
+  - env: doom
+  - diffusion_model: doom_edm
 
 
 hydra:
@@ -27,7 +27,7 @@ common:
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
-  save_generative_model_every: 5
+  save_diffusion_model_every: 5
   num_to_keep: 11  # number of checkpoints to keep, use null to disable
 
 
@@ -45,42 +45,4 @@ evaluation:
   should: True
   every: 20
 
-denoiser:
-  training:
-    num_autoregressive_steps: 4
-    start_after_epochs: 0
-    steps_first_epoch: 400
-    steps_per_epoch: 400
-    sample_weights: null
-    batch_size: 64
-    grad_acc_steps: 2
-    lr_warmup_steps: 100
-    max_grad_norm: 10.0
-
-  optimizer:
-    lr: 1e-4
-    weight_decay: 1e-2
-    eps: 1e-8
-  
-  sigma_distribution: # log normal distribution for sigma during training
-    _target_: models.diffusion.SigmaDistributionConfig
-    loc: -1.2
-    scale: 1.2
-    sigma_min: 2e-3
-    sigma_max: 20
-
-upsampler:
-  training:
-    num_autoregressive_steps: 1
-    start_after_epochs: 0
-    steps_first_epoch: 400
-    steps_per_epoch: 400
-    sample_weights: null
-    batch_size: 8
-    grad_acc_steps: 4
-    lr_warmup_steps: 100
-    max_grad_norm: 10.0
-
-  optimizer: ${denoiser.optimizer}
-  sigma_distribution: ${denoiser.sigma_distribution}
 

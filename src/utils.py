@@ -56,18 +56,6 @@ class StateDictMixin:
             self._set_field(k, v)
 
 
-@dataclass
-class CommonTools(StateDictMixin):
-    denoiser: Any
-    upsampler: Optional[Any] = None
-
-    def get(self, name: str) -> Any:
-        return getattr(self, name)
-
-    def set(self, name: str, value: Any):
-        return setattr(self, name, value)
-
-
 def broadcast_if_needed(*args):
     objects = list(args)
     if dist.is_initialized():
@@ -176,16 +164,6 @@ def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters())
 
 
-def extract_state_dict(state_dict: OrderedDict, module_name: str) -> OrderedDict:
-    return OrderedDict(
-        {
-            k.split(".", 1)[1]: v
-            for k, v in state_dict.items()
-            if k.startswith(module_name)
-        }
-    )
-
-
 def get_lr_sched(opt: torch.optim.Optimizer, num_warmup_steps: int) -> LambdaLR:
     def lr_lambda(current_step: int):
         return (
@@ -197,20 +175,20 @@ def get_lr_sched(opt: torch.optim.Optimizer, num_warmup_steps: int) -> LambdaLR:
     return LambdaLR(opt, lr_lambda, last_epoch=-1)
 
 
-def get_path_generative_model_ckpt(
+def get_path_diffusion_model_ckpt(
     path_ckpt_dir: Union[str, Path], epoch: int, num_zeros: int = 5
 ) -> Path:
-    d = Path(path_ckpt_dir) / "generative_model_versions"
+    d = Path(path_ckpt_dir) / "diffusion_model_versions"
     if epoch >= 0:
-        return d / f"generative_model_epoch_{epoch:0{num_zeros}d}.pt"
+        return d / f"diffusion_model_epoch_{epoch:0{num_zeros}d}.pt"
     else:
         all_ = sorted(list(d.iterdir()))
         assert len(all_) >= -epoch
         return all_[epoch]
 
 
-def keep_generative_model_copies_every(
-    generative_model_sd: Dict[str, Any],
+def keep_model_copies_every(
+    model_sd: Dict[str, Any],
     epoch: int,
     path_ckpt_dir: Path,
     every: int,
@@ -218,11 +196,11 @@ def keep_generative_model_copies_every(
 ) -> None:
     assert every > 0
     assert num_to_keep is None or num_to_keep > 0
-    get_path = partial(get_path_generative_model_ckpt, path_ckpt_dir)
+    get_path = partial(get_path_diffusion_model_ckpt, path_ckpt_dir)
     get_path(0).parent.mkdir(parents=False, exist_ok=True)
 
-    # Save generative_model
-    save_with_backup(generative_model_sd, get_path(epoch))
+    # Save diffusion_model
+    save_with_backup(model_sd, get_path(epoch))
 
     # Clean oldest
     if (num_to_keep is not None) and (epoch % every == 0):

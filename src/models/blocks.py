@@ -1,10 +1,9 @@
-from functools import partial
 import math
+from functools import partial
 from typing import List, Optional
 
 import torch
-from torch import Tensor
-from torch import nn
+from torch import Tensor, nn
 from torch.nn import functional as F
 
 # Settings for GroupNorm and Attention

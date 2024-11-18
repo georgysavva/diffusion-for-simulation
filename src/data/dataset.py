@@ -58,7 +58,7 @@ class Dataset(StateDictMixin, TorchDataset):
         elif "full_res" in segment.info:
             segment.info["full_res"] = segment.info["full_res"][segment_id.start:segment_id.stop]
         return segment
-        
+
     def __str__(self) -> str:
         return f"{self.name}: {self.num_episodes} episodes, {self.num_steps} steps."
 
@@ -98,38 +98,6 @@ class Dataset(StateDictMixin, TorchDataset):
                 self._cache[episode_id] = episode
         return episode
 
-    def add_episode(self, episode: Episode, *, episode_id: Optional[int] = None) -> int:
-        self.assert_not_static()
-        episode = episode.to("cpu")
-
-        if episode_id is None:
-            episode_id = self.num_episodes
-            self.start_idx = np.concatenate((self.start_idx, np.array([self.num_steps])))
-            self.lengths = np.concatenate((self.lengths, np.array([len(episode)])))
-            self.num_steps += len(episode)
-            self.num_episodes += 1
-
-        else:
-            assert episode_id < self.num_episodes
-            old_episode = self.load_episode(episode_id)
-            incr_num_steps = len(episode) - len(old_episode)
-            self.lengths[episode_id] = len(episode)
-            self.start_idx[episode_id + 1 :] += incr_num_steps
-            self.num_steps += incr_num_steps
-            self.counter_rew.subtract(old_episode.rew.sign().tolist())
-            self.counter_end.subtract(old_episode.end.tolist())
-
-        self.counter_rew.update(episode.rew.sign().tolist())
-        self.counter_end.update(episode.end.tolist())
-
-        if self._save_on_disk:
-            episode.save(self._get_episode_path(episode_id))
-
-        if self._cache_in_ram:
-            self._cache[episode_id] = episode
-
-        return episode_id
-
     def _get_episode_path(self, episode_id: int) -> Path:
         n = 3  # number of hierarchies
         powers = np.arange(n)
@@ -144,10 +112,6 @@ class Dataset(StateDictMixin, TorchDataset):
 
     def assert_not_static(self) -> None:
         assert not self.is_static, "Trying to modify a static dataset."
-
-    def save_to_default_path(self) -> None:
-        self._default_path.parent.mkdir(exist_ok=True, parents=True)
-        torch.save(self.state_dict(), self._default_path)
 
     def load_from_default_path(self) -> None:
         if self._default_path.is_file():
