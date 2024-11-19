@@ -3,7 +3,7 @@ from typing import Generator, List, Optional
 import numpy as np
 import torch
 
-from .dataset import CSGOHdf5Dataset, Dataset
+from .dataset import Dataset
 from .segment import SegmentId
 
 
@@ -37,7 +37,6 @@ class BatchSampler(torch.utils.data.Sampler):
         episodes_partition = np.arange(self.rank, num_episodes, self.world_size)
         max_eps = self.batch_size
         episode_ids = np.random.choice(episodes_partition, size=max_eps, replace=True)
-        episode_ids = episode_ids.repeat(self.batch_size // max_eps)
         timesteps = np.random.randint(low=0, high=self.dataset.lengths[episode_ids])
 
         stops = np.minimum(

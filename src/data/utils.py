@@ -15,11 +15,10 @@ def collate_segments_to_batch(segments: List[Segment]) -> Batch:
     return Batch(*stack, [s.id for s in segments])
 
 
-def make_segment(episode: Episode, segment_id: SegmentId, should_pad: bool = True) -> Segment:
+def make_segment(episode: Episode, segment_id: SegmentId) -> Segment:
     assert segment_id.start < len(episode) and segment_id.stop > 0 and segment_id.start < segment_id.stop
     pad_len_right = max(0, segment_id.stop - len(episode))
     pad_len_left = max(0, -segment_id.start)
-    assert pad_len_right == pad_len_left == 0 or should_pad
 
     def pad(x):
         right = F.pad(x, [0 for _ in range(2 * x.ndim - 1)] + [pad_len_right]) if pad_len_right > 0 else x
@@ -62,14 +61,12 @@ class DatasetTraverser:
         chunks = []
         for episode_id in range(self.dataset.num_episodes):
             episode = self.dataset.load_episode(episode_id)
-            segments = []
             for i in range(math.ceil(len(episode) / self.chunk_size)):
                 start = i * self.chunk_size
                 stop = (i + 1) * self.chunk_size
                 segment = make_segment(
                     episode,
                     SegmentId(episode_id, start, stop),
-                    should_pad=True,
                 )
                 chunks.append(segment)
             if chunks[-1].effective_size < 2:
