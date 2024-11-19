@@ -12,7 +12,7 @@ from .segment import Segment, SegmentId
 def collate_segments_to_batch(segments: List[Segment]) -> Batch:
     attrs = ("obs", "act", "rew", "end", "trunc", "mask_padding")
     stack = (torch.stack([getattr(s, x) for s in segments]) for x in attrs)
-    return Batch(*stack, [s.info for s in segments], [s.id for s in segments])
+    return Batch(*stack, [s.id for s in segments])
 
 
 def make_segment(episode: Episode, segment_id: SegmentId, should_pad: bool = True) -> Segment:
@@ -36,7 +36,6 @@ def make_segment(episode: Episode, segment_id: SegmentId, should_pad: bool = Tru
         pad(episode.end[start:stop]),
         pad(episode.trunc[start:stop]),
         mask_padding,
-        info=episode.info,
         id=SegmentId(segment_id.episode_id, start, stop),
     )
 
@@ -72,8 +71,6 @@ class DatasetTraverser:
                     SegmentId(episode_id, start, stop),
                     should_pad=True,
                 )
-                segment_id_full_res = SegmentId(episode.info["original_file_id"], start, stop)
-                segment.info["full_res"] = self.dataset._dataset_full_res[segment_id_full_res].obs
                 chunks.append(segment)
             if chunks[-1].effective_size < 2:
                 chunks.pop()
@@ -84,4 +81,3 @@ class DatasetTraverser:
 
         if len(chunks) > 0:
             yield collate_segments_to_batch(chunks)
-

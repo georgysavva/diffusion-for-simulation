@@ -56,14 +56,6 @@ class StateDictMixin:
             self._set_field(k, v)
 
 
-def broadcast_if_needed(*args):
-    objects = list(args)
-    if dist.is_initialized():
-        dist.broadcast_object_list(objects, src=0)
-        # the list `objects` now contains the version of rank 0
-    return objects
-
-
 def build_ddp_wrapper(**modules_dict: Dict[str, nn.Module]) -> Namespace:
     return Namespace(**{name: DDP(module) for name, module in modules_dict.items()})
 

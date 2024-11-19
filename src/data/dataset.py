@@ -1,6 +1,4 @@
 import multiprocessing as mp
-import shutil
-from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -10,84 +8,31 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset as TorchDataset
 
-from utils import StateDictMixin
-
+from ..utils import StateDictMixin
 from .episode import Episode
 from .segment import Segment, SegmentId
 from .utils import make_segment
 
 
-class Dataset(StateDictMixin, TorchDataset):
+class Dataset(TorchDataset):
+
     def __init__(
         self,
         directory: Path,
-        dataset_full_res: Optional[TorchDataset],
-        name: Optional[str] = None,
         cache_in_ram: bool = False,
         use_manager: bool = False,
-        save_on_disk: bool = True,
     ) -> None:
         super().__init__()
 
-        # State
-        self.is_static = False
-        self.num_episodes = None
-        self.num_steps = None
-        self.start_idx = None
-        self.lengths = None
-
         self._directory = Path(directory).expanduser()
-        self._name = name if name is not None else self._directory.stem
         self._cache_in_ram = cache_in_ram
-        self._save_on_disk = save_on_disk
         self._default_path = self._directory / "info.pt"
         self._cache = mp.Manager().dict() if use_manager else {}
-        self._reset()
-
-        self._dataset_full_res = dataset_full_res
-
-    def __len__(self) -> int:
-        return self.num_steps
 
     def __getitem__(self, segment_id: SegmentId) -> Segment:
         episode = self.load_episode(segment_id.episode_id)
         segment = make_segment(episode, segment_id, should_pad=True)
-        if self._dataset_full_res is not None:
-            segment_id_full_res = SegmentId(episode.info["original_file_id"], segment_id.start, segment_id.stop)
-            segment.info["full_res"] = self._dataset_full_res[segment_id_full_res].obs
-        elif "full_res" in segment.info:
-            segment.info["full_res"] = segment.info["full_res"][segment_id.start:segment_id.stop]
         return segment
-
-    def __str__(self) -> str:
-        return f"{self.name}: {self.num_episodes} episodes, {self.num_steps} steps."
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def counts_rew(self) -> List[int]:
-        return [self.counter_rew[r] for r in [-1, 0, 1]]
-
-    @property
-    def counts_end(self) -> List[int]:
-        return [self.counter_end[e] for e in [0, 1]]
-
-    def _reset(self) -> None:
-        self.num_episodes = 0
-        self.num_steps = 0
-        self.start_idx = np.array([], dtype=np.int64)
-        self.lengths = np.array([], dtype=np.int64)
-        self.counter_rew = Counter()
-        self.counter_end = Counter()
-        self._cache.clear()
-
-    def clear(self) -> None:
-        self.assert_not_static()
-        if self._directory.is_dir():
-            shutil.rmtree(self._directory)
-        self._reset()
 
     def load_episode(self, episode_id: int) -> Episode:
         if self._cache_in_ram and episode_id in self._cache:
@@ -106,17 +51,6 @@ class Dataset(StateDictMixin, TorchDataset):
         subfolders = "/".join([f"{x:0{n - i}d}" for i, x in enumerate(subfolders)])
         return self._directory / subfolders / f"{episode_id}.pt"
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        super().load_state_dict(state_dict)
-        self._cache.clear()
-
-    def assert_not_static(self) -> None:
-        assert not self.is_static, "Trying to modify a static dataset."
-
-    def load_from_default_path(self) -> None:
-        if self._default_path.is_file():
-            self.load_state_dict(torch.load(self._default_path))
-
 
 class CSGOHdf5Dataset(StateDictMixin, TorchDataset):
     def __init__(self, directory: Path) -> None:
@@ -130,7 +64,7 @@ class CSGOHdf5Dataset(StateDictMixin, TorchDataset):
 
     def __len__(self) -> int:
         return self.num_steps
-  
+
     def save_to_default_path(self) -> None:
         pass
 
@@ -156,8 +90,16 @@ class CSGOHdf5Dataset(StateDictMixin, TorchDataset):
         rew = torch.zeros(obs.size(0))
         end = torch.zeros(obs.size(0), dtype=torch.uint8)
         trunc = torch.zeros(obs.size(0), dtype=torch.uint8)
-        return Segment(obs, act, rew, end, trunc, mask_padding, info={}, id=SegmentId(segment_id.episode_id, start, stop))
-    
+        return Segment(
+            obs,
+            act,
+            rew,
+            end,
+            trunc,
+            mask_padding,
+            id=SegmentId(segment_id.episode_id, start, stop),
+        )
+
     def load_episode(self, episode_id: int) -> Episode:  # used by DatasetTraverser
         s = self[SegmentId(episode_id, 0, self._length_one_episode)]
-        return Episode(s.obs, s.act, s.rew, s.end, s.trunc, s.info)
+        return Episode(s.obs, s.act, s.rew, s.end, s.trunc)

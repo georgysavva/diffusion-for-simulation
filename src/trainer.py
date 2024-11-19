@@ -11,17 +11,10 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
-from data import (
-    BatchSampler,
-    CSGOHdf5Dataset,
-    Dataset,
-    DatasetTraverser,
-    collate_segments_to_batch,
-)
+from data import BatchSampler, Dataset, DatasetTraverser, collate_segments_to_batch
 from utils import (
     Logs,
     StateDictMixin,
-    broadcast_if_needed,
     build_ddp_wrapper,
     configure_opt,
     count_parameters,
@@ -95,27 +88,16 @@ class Trainer(StateDictMixin):
             shutil.copytree(src=root_dir / "src", dst="./src")
             shutil.copytree(src=root_dir / "scripts", dst="./scripts")
 
-        assert (
-            cfg.env.path_data_low_res is not None
-            and cfg.env.path_data_full_res is not None
-        ), "Make sure to download CSGO data and set the relevant paths in cfg.env"
-        dataset_full_res = CSGOHdf5Dataset(Path(cfg.env.path_data_full_res))
-
         num_workers = cfg.training.num_workers_data_loaders
         use_manager = cfg.training.cache_in_ram and (num_workers > 0)
         p = Path(cfg.static_dataset.path)
         self.train_dataset = Dataset(
             p / "train",
-            dataset_full_res,
             "train_dataset",
             cfg.training.cache_in_ram,
             use_manager,
         )
-        self.test_dataset = Dataset(
-            p / "test", dataset_full_res, "test_dataset", cache_in_ram=True
-        )
-        self.train_dataset.load_from_default_path()
-        self.test_dataset.load_from_default_path()
+        self.test_dataset = Dataset(p / "test", "test_dataset", cache_in_ram=True)
 
         # Create models
         self.diffusion_model = instantiate(cfg.diffusion_model.model).to(self._device)
@@ -146,29 +128,30 @@ class Trainer(StateDictMixin):
 
         # Data loaders
 
-        make_data_loader = partial(
-            DataLoader,
-            dataset=self.train_dataset,
-            collate_fn=collate_segments_to_batch,
-            num_workers=num_workers,
-            persistent_workers=(num_workers > 0),
-            pin_memory=self._use_cuda,
-            pin_memory_device=str(self._device) if self._use_cuda else "",
-        )
-
-        make_batch_sampler = partial(
-            BatchSampler, self.train_dataset, self._rank, self._world_size
-        )
-
         c = cfg.diffusion_model.training
         seq_length = (
             cfg.diffusion_model.model_cfg.inner_model.num_steps_conditioning
             + 1
             + c.num_autoregressive_steps
         )
-        bs = make_batch_sampler(c.batch_size, seq_length, sample_weights=None)
+        batch_sampler = BatchSampler(
+            self.train_dataset,
+            self._rank,
+            self._world_size,
+            c.batch_size,
+            seq_length,
+        )
 
-        self._data_loader_train = make_data_loader(batch_sampler=bs)
+        self._data_loader_train = DataLoader(
+            dataset=self.train_dataset,
+            collate_fn=collate_segments_to_batch,
+            num_workers=num_workers,
+            persistent_workers=(num_workers > 0),
+            pin_memory=self._use_cuda,
+            pin_memory_device=str(self._device) if self._use_cuda else "",
+            batch_sampler=batch_sampler,
+        )
+
         self._data_loader_test = DatasetTraverser(
             self.test_dataset, c.batch_size, seq_length
         )
@@ -200,11 +183,6 @@ class Trainer(StateDictMixin):
 
             if self._rank == 0:
                 print(f"\nEpoch {self.epoch} / {num_epochs}\n")
-
-            (sd_train_dataset,) = broadcast_if_needed(
-                self.train_dataset.state_dict()
-            )  # update dataset for ranks > 0
-            self.train_dataset.load_state_dict(sd_train_dataset)
 
             if self._cfg.training.should:
                 to_log += self.train_diffusion_model()
@@ -319,7 +297,5 @@ class Trainer(StateDictMixin):
     def save_checkpoint(self) -> None:
         if self._rank == 0:
             save_with_backup(self.state_dict(), self._path_state_ckpt)
-            self.train_dataset.save_to_default_path()
-            self.test_dataset.save_to_default_path()
             self._keep_model_copies(self.diffusion_model.state_dict(), self.epoch)
             self._save_info_for_import_script(self.epoch)
