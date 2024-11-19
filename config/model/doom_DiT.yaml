@@ -1,0 +1,16 @@
+model:
+  _target_: models.DiT.DiffusionModel
+
+    
+training:
+  batch_size: 64
+  grad_acc_steps: 2
+  lr_warmup_steps: 100
+  max_grad_norm: 10.0
+
+  optimizer:
+    lr: 1e-4
+    weight_decay: 1e-2
+    eps: 1e-8
+  
+

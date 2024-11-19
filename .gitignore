@@ -15,6 +15,7 @@ __pycache__/
 *$py.class
 penv/
 _vizdoom.ini
+_vizdoom/
 # Jupyter Notebook
 .ipynb_checkpoints
 

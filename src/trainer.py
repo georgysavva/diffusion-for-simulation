@@ -3,7 +3,6 @@ import time
 from functools import partial
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.distributed as dist
 import wandb
@@ -19,7 +18,6 @@ from data import (
     DatasetTraverser,
     collate_segments_to_batch,
 )
-from src.models import edm
 from utils import (
     Logs,
     StateDictMixin,
@@ -120,9 +118,7 @@ class Trainer(StateDictMixin):
         self.test_dataset.load_from_default_path()
 
         # Create models
-        self.diffusion_model = edm.Denoiser(
-            instantiate(cfg.diffusion_model.model_cfg)
-        ).to(self._device)
+        self.diffusion_model = instantiate(cfg.diffusion_model.model).to(self._device)
         self._diffusion_model = (
             build_ddp_wrapper(**self.diffusion_model._modules)
             if dist.is_initialized()
@@ -175,12 +171,6 @@ class Trainer(StateDictMixin):
         self._data_loader_train = make_data_loader(batch_sampler=bs)
         self._data_loader_test = DatasetTraverser(
             self.test_dataset, c.batch_size, seq_length
-        )
-
-        # Setup training
-        sigma_distribution_cfg = instantiate(cfg.diffusion_model.sigma_distribution)
-        self.diffusion_model.setup_training(
-            sigma_distribution_cfg,
         )
 
         # Training state (things to be saved/restored)
