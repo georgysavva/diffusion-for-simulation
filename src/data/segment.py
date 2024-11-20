@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, Dict, Union
 
@@ -14,15 +15,8 @@ class SegmentId:
 
 @dataclass
 class Segment:
-    obs: torch.FloatTensor
-    act: torch.LongTensor
-    rew: torch.FloatTensor
-    end: torch.ByteTensor
-    trunc: torch.ByteTensor
+    obs: torch.ByteTensor
+    act: torch.IntTensor
+    end: torch.BoolTensor
     mask_padding: torch.BoolTensor
-    info: Dict[str, Any]
     id: SegmentId
-
-    @property
-    def effective_size(self):
-        return self.mask_padding.sum().item()

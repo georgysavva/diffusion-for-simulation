@@ -1,4 +1,5 @@
 import argparse  # Add argparse import
+import json
 import os
 
 import cv2
@@ -13,6 +14,7 @@ def collect_episodes(env, num_episodes, save_path):
     os.makedirs(save_path, exist_ok=True)
     video_path = os.path.join(save_path, "videos")
     os.makedirs(video_path, exist_ok=True)
+    episodes_info = {"episodes_num": 0, "episodes": []}
     for episode in tqdm(range(num_episodes), desc="Sampling episodes"):
         episode_data = {"observations": [], "actions": [], "rewards": []}
         observation, _ = env.reset()
@@ -55,14 +57,26 @@ def collect_episodes(env, num_episodes, save_path):
         episode_data["actions"] = torch.tensor(episode_data["actions"])
         episode_data["rewards"] = torch.tensor(episode_data["rewards"])
         # Save episode data to disk
-        episode_file = os.path.join(
-            save_path, f"episode_{episode}_r{episode_reward:.2f}.pt"
-        )
+        episode_file = os.path.join(save_path, f"episode_{episode}.pt")
         torch.save(episode_data, episode_file)
         print(f"Episode {episode} saved to {episode_file}")
         # Close the video writer
         out.release()
+        episodes_info["episodes_num"] += 1
+        episodes_info["episodes"].append(
+            {
+                "episode_id": episode,
+                "length": len(episode_data["actions"]),
+                "return": episode_reward,
+                "source": "random_policy",
+            }
+        )
         print(f"Episode {episode} video saved to {video_filename}")
+
+    # Save episodes info to disk
+    episodes_info_file = os.path.join(save_path, "episodes_info.json")
+    with open(episodes_info_file, "w") as json_file:
+        json.dump(episodes_info, json_file, indent=4)
 
 
 # Main function
@@ -72,7 +86,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_path",
         type=str,
-        default="../shared/datasets/doom/random_policy",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/test",
         help="Path to save the collected data",
     )
     parser.add_argument(
