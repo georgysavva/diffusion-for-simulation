@@ -11,10 +11,8 @@ from .segment import SegmentId
 @dataclass
 class Batch:
     obs: torch.ByteTensor
-    act: torch.LongTensor
-    rew: torch.FloatTensor
-    end: torch.LongTensor
-    trunc: torch.LongTensor
+    act: torch.IntTensor
+    end: torch.BoolTensor
     mask_padding: torch.BoolTensor
     segment_ids: List[SegmentId]
 

@@ -15,14 +15,8 @@ class SegmentId:
 
 @dataclass
 class Segment:
-    obs: torch.FloatTensor
-    act: torch.LongTensor
-    rew: torch.FloatTensor
-    end: torch.ByteTensor
-    trunc: torch.ByteTensor
+    obs: torch.ByteTensor
+    act: torch.IntTensor
+    end: torch.BoolTensor
     mask_padding: torch.BoolTensor
     id: SegmentId
-
-    @property
-    def effective_size(self):
-        return self.mask_padding.sum().item()

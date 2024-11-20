@@ -1,14 +1,10 @@
+import json
 import multiprocessing as mp
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-import h5py
 import numpy as np
-import torch
-import torch.nn.functional as F
 from torch.utils.data import Dataset as TorchDataset
 
-from ..utils import StateDictMixin
 from .episode import Episode
 from .segment import Segment, SegmentId
 from .utils import make_segment
@@ -26,8 +22,19 @@ class Dataset(TorchDataset):
 
         self._directory = Path(directory).expanduser()
         self._cache_in_ram = cache_in_ram
-        self._default_path = self._directory / "info.pt"
         self._cache = mp.Manager().dict() if use_manager else {}
+        with open(self._directory / "episodes_info.json", "r") as json_file:
+            episodes_info = json.load(json_file)
+        self._num_episodes = episodes_info["episodes_num"]
+        self._lengths = np.array([ep["length"] for ep in episodes_info["episodes"]])
+
+    @property
+    def num_episodes(self) -> int:
+        return self._num_episodes
+
+    @property
+    def lengths(self) -> np.ndarray:
+        return self._lengths
 
     def __getitem__(self, segment_id: SegmentId) -> Segment:
         episode = self.load_episode(segment_id.episode_id)
@@ -44,9 +51,5 @@ class Dataset(TorchDataset):
         return episode
 
     def _get_episode_path(self, episode_id: int) -> Path:
-        n = 3  # number of hierarchies
-        powers = np.arange(n)
-        subfolders = np.floor((episode_id % 10 ** (1 + powers)) / 10**powers) * 10**powers
-        subfolders = [int(x) for x in subfolders[::-1]]
-        subfolders = "/".join([f"{x:0{n - i}d}" for i, x in enumerate(subfolders)])
-        return self._directory / subfolders / f"{episode_id}.pt"
+
+        return self._directory / f"episode_{episode_id}.pt"

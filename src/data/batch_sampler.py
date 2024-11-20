@@ -35,8 +35,9 @@ class BatchSampler(torch.utils.data.Sampler):
         num_episodes = self.dataset.num_episodes
 
         episodes_partition = np.arange(self.rank, num_episodes, self.world_size)
-        max_eps = self.batch_size
-        episode_ids = np.random.choice(episodes_partition, size=max_eps, replace=True)
+        episode_ids = np.random.choice(
+            episodes_partition, size=self.batch_size, replace=True
+        )
         timesteps = np.random.randint(low=0, high=self.dataset.lengths[episode_ids])
 
         stops = np.minimum(
