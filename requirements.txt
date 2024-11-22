@@ -9,3 +9,4 @@ wandb
 vizdoom
 gymnasium
 opencv-python
+timm
