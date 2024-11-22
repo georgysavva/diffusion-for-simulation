@@ -84,7 +84,7 @@ class DiTBlock(nn.Module):
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
 
-    def forward(self, x, c):
+    def forward(self, x, c, prev_obs):
         print("x", x.shape, "c", c.shape)
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(c).chunk(6, dim=1)
