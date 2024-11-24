@@ -125,16 +125,11 @@ class ActionEmbedder(nn.Module):
     Embeds actions into vector representations.
     """
 
-    def __init__(self, num_actions, num_conditioning_steps, hidden_size):
+    def __init__(self, num_actions, hidden_size):
         super().__init__()
-        assert (
-            hidden_size % num_conditioning_steps == 0
-        ), "hidden_size must be divisible by num_conditioning_steps"
         self.embedding_table = nn.Sequential(
-            nn.Embedding(num_actions, hidden_size // num_conditioning_steps),
-            nn.Flatten(),  # b t e -> b (t e)
+            nn.Embedding(num_actions, hidden_size),
         )
-        self.num_classes = num_actions
 
     def forward(self, actions):
         embeddings = self.embedding_table(actions)
@@ -164,16 +159,19 @@ class DiT(nn.Module):
         self.patch_size = patch_size
         self.num_heads = num_heads
 
-        self.obs_embedder = PatchEmbed(
+        self.noised_obs_embedder = PatchEmbed(
+            input_size, patch_size, in_channels, hidden_size, bias=True
+        )
+        self.previous_obs_embedder = PatchEmbed(
             input_size, patch_size, in_channels, hidden_size, bias=True
         )
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.act_embedder = ActionEmbedder(
             num_actions, num_conditioning_steps, hidden_size
         )
-        num_patches = self.obs_embedder.num_patches
+        num_patches = self.noised_obs_embedder.num_patches
         # Will use fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(
+        self.noised_obs_pos_embed = nn.Parameter(
             torch.zeros(1, num_patches, hidden_size), requires_grad=False
         )
 
@@ -197,15 +195,18 @@ class DiT(nn.Module):
         self.apply(_basic_init)
 
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos_embed = get_2d_sincos_pos_embed(
-            self.pos_embed.shape[-1], int(self.obs_embedder.num_patches**0.5)
+        noised_obs_pos_embed = get_2d_sincos_pos_embed(
+            self.noised_obs_pos_embed.shape[-1],
+            int(self.noised_obs_embedder.num_patches**0.5),
         )
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        self.noised_obs_pos_embed.data.copy_(
+            torch.from_numpy(noised_obs_pos_embed).float().unsqueeze(0)
+        )
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
-        w = self.obs_embedder.proj.weight.data
+        w = self.noised_obs_embedder.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        nn.init.constant_(self.obs_embedder.proj.bias, 0)
+        nn.init.constant_(self.noised_obs_embedder.proj.bias, 0)
 
         # Initialize action embedding table:
         nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
@@ -231,7 +232,7 @@ class DiT(nn.Module):
         imgs: (N, H, W, C)
         """
         c = self.out_channels
-        p = self.obs_embedder.patch_size[0]
+        p = self.noised_obs_embedder.patch_size[0]
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
 
@@ -248,7 +249,7 @@ class DiT(nn.Module):
         y: (N,) tensor of class labels
         """
         noised_obs = (
-            self.obs_embedder(noised_obs) + self.pos_embed
+            self.noised_obs_embedder(noised_obs) + self.noised_obs_pos_embed
         )  # (N, T, D), where T = H * W / patch_size ** 2
 
         t = self.t_embedder(t)  # (N, D)
