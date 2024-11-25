@@ -16,7 +16,7 @@ class TimestepEmbedder(nn.Module):
     Embeds scalar timesteps into vector representations.
     """
 
-    def __init__(self, hidden_size, frequency_embedding_size=256):
+    def __init__(self, hidden_size, frequency_embedding_size):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_size, hidden_size, bias=True),
@@ -66,7 +66,7 @@ class DiTBlock(nn.Module):
     A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
     """
 
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
+    def __init__(self, hidden_size, num_heads, mlp_ratio, **block_kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(
@@ -206,13 +206,14 @@ class DiT(nn.Module):
         self,
         num_actions,
         num_conditioning_steps,
-        input_size=32,
-        patch_size=2,
-        in_channels=4,
-        hidden_size=1152,
-        depth=28,
-        num_heads=16,
-        mlp_ratio=4.0,
+        input_size,
+        patch_size,
+        in_channels,
+        hidden_size,
+        depth,
+        num_heads,
+        mlp_ratio,
+        time_frequency_embedding_size,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -226,7 +227,7 @@ class DiT(nn.Module):
         self.previous_obs_embedder = PreviousObservationEmbedder(
             num_conditioning_steps, input_size, patch_size, in_channels, hidden_size
         )
-        self.t_embedder = TimestepEmbedder(hidden_size)
+        self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
         self.act_embedder = ActionEmbedder(
             num_actions, num_conditioning_steps, hidden_size
         )
@@ -335,7 +336,7 @@ class DiT(nn.Module):
 # https://github.com/facebookresearch/mae/blob/main/util/pos_embed.py
 
 
-def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=0):
+def get_2d_sincos_pos_embed(embed_dim, grid_size):
     """
     grid_size: int of the grid height and width
     return:
@@ -348,10 +349,6 @@ def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=
 
     grid = grid.reshape([2, 1, grid_size, grid_size])
     pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
-    if cls_token and extra_tokens > 0:
-        pos_embed = np.concatenate(
-            [np.zeros([extra_tokens, embed_dim]), pos_embed], axis=0
-        )
     return pos_embed
 
 
