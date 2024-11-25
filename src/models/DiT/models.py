@@ -84,6 +84,12 @@ class DiTBlock(nn.Module):
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
+        self.cross_attn_obs = nn.MultiheadAttention(
+            embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+        )
+        self.cross_attn_act = nn.MultiheadAttention(
+            embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+        )
 
     def forward(self, x, t, prev_obs, prev_act):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
@@ -92,6 +98,24 @@ class DiTBlock(nn.Module):
         x = x + gate_msa.unsqueeze(1) * self.attn(
             modulate(self.norm1(x), shift_msa, scale_msa)
         )
+
+        # Cross-Attention on prev_obs
+        obs_conditioned, _ = self.cross_attn_obs(
+            query=x,  # (N, T, D)
+            key=prev_obs,  # (N, steps * T, D)
+            value=prev_obs,  # (N, steps * T, D)
+            need_weights=False,
+        )
+        x = x + obs_conditioned  # (N, T, D)
+
+        # Cross-Attention on prev_act
+        act_conditioned, _ = self.cross_attn_act(
+            query=x,  # (N, T, D)
+            key=prev_act,  # (N, steps, D)
+            value=prev_act,  # (N, steps, D)
+            need_weights=False,
+        )
+        x = x + act_conditioned  # (N, T, D)
         x = x + gate_mlp.unsqueeze(1) * self.mlp(
             modulate(self.norm2(x), shift_mlp, scale_mlp)
         )
@@ -429,19 +453,3 @@ def DiT_S_4(**kwargs):
 
 def DiT_S_8(**kwargs):
     return DiT(depth=12, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
-
-
-DiT_models = {
-    "DiT-XL/2": DiT_XL_2,
-    "DiT-XL/4": DiT_XL_4,
-    "DiT-XL/8": DiT_XL_8,
-    "DiT-L/2": DiT_L_2,
-    "DiT-L/4": DiT_L_4,
-    "DiT-L/8": DiT_L_8,
-    "DiT-B/2": DiT_B_2,
-    "DiT-B/4": DiT_B_4,
-    "DiT-B/8": DiT_B_8,
-    "DiT-S/2": DiT_S_2,
-    "DiT-S/4": DiT_S_4,
-    "DiT-S/8": DiT_S_8,
-}
