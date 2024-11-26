@@ -10,7 +10,7 @@ from .segment import SegmentId
 
 @dataclass
 class Batch:
-    obs: torch.ByteTensor
+    obs: torch.Tensor
     act: torch.IntTensor
     segment_ids: List[SegmentId]
 

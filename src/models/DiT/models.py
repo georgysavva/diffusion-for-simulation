@@ -98,7 +98,6 @@ class DiTBlock(nn.Module):
         x = x + gate_msa.unsqueeze(1) * self.attn(
             modulate(self.norm1(x), shift_msa, scale_msa)
         )
-
         # Cross-Attention on prev_obs
         obs_conditioned, _ = self.cross_attn_obs(
             query=x,  # (N, T, D)
@@ -149,12 +148,12 @@ class ActionEmbedder(nn.Module):
     Embeds actions into vector representations.
     """
 
-    def __init__(self, num_conditioning_steps, num_actions, hidden_size):
+    def __init__(self, num_actions, num_conditioning_steps, hidden_size):
         super().__init__()
         self.embedding_table = nn.Embedding(num_actions, hidden_size)
         pos_embed = get_1d_sincos_pos_embed(num_conditioning_steps, hidden_size)
         self.pos_embed = nn.Parameter(
-            torch.from_numpy(pos_embed).float().unsqueeze(0), requires_grad=False
+            pos_embed.float().unsqueeze(0), requires_grad=False
         )
 
     def forward(self, actions):
@@ -180,7 +179,7 @@ class PreviousObservationEmbedder(nn.Module):
             num_conditioning_steps * num_patches, hidden_size
         )
         self.pos_embed = nn.Parameter(
-            torch.from_numpy(pos_embed).float().unsqueeze(0), requires_grad=False
+            pos_embed.float().unsqueeze(0), requires_grad=False
         )
 
     def forward(self, prev_obs):
@@ -272,7 +271,7 @@ class DiT(nn.Module):
 
         w = self.previous_obs_embedder.patch_embed.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        nn.init.constant_(self.previous_obs_embedder.patch_embed.proj, 0)
+        nn.init.constant_(self.previous_obs_embedder.patch_embed.proj.bias, 0)
 
         # Initialize action embedding table:
         nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
@@ -317,10 +316,10 @@ class DiT(nn.Module):
         noised_obs = (
             self.noised_obs_embedder(noised_obs) + self.noised_obs_pos_embed
         )  # (N, T, D), where T = H * W / patch_size ** 2
-        prev_obs = self.previous_obs_embedder(prev_obs)  # (N, steps * T, D)
-        prev_act = self.act_embedder(prev_act)  # (N, T, D)
         t = self.t_embedder(t)  # (N, D)
-        prev_act = self.act_embedder(prev_act)  # (N, D)
+        prev_obs = self.previous_obs_embedder(prev_obs)  # (N, steps * T, D)
+        prev_act = self.act_embedder(prev_act)  # (N, steps, D)
+
         for block in self.blocks:
             noised_obs = block(noised_obs, t, prev_obs, prev_act)  # (N, T, D)
         noised_obs = self.final_layer(
@@ -395,7 +394,6 @@ def get_1d_sincos_pos_embed(seq_len: int, embed_dim: int) -> torch.Tensor:
     odd = torch.cos(out)
     pe[:, 0::2] = even
     pe[:, 1::2] = odd
-    pe = pe.unsqueeze(0)
     return pe
 
 

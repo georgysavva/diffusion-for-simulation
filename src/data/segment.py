@@ -15,6 +15,6 @@ class SegmentId:
 
 @dataclass
 class Segment:
-    obs: torch.ByteTensor
+    obs: torch.Tensor
     act: torch.IntTensor
     id: SegmentId

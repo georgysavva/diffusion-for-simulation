@@ -12,12 +12,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
 from data import BatchSampler, Dataset, DatasetTraverser, collate_segments_to_batch
-from src.diffusion import create_diffusion
+from diffusion import create_diffusion
 from utils import (
     Logs,
     StateDictMixin,
     build_ddp_wrapper,
-    configure_opt,
     count_parameters,
     get_lr_sched,
     keep_model_copies_every,
@@ -63,7 +62,6 @@ class Trainer(StateDictMixin):
                     **cfg.wandb,
                 )
             )
-
         # Checkpointing
         self._path_ckpt_dir = Path("checkpoints")
         self._path_state_ckpt = self._path_ckpt_dir / "state.pt"
@@ -100,7 +98,9 @@ class Trainer(StateDictMixin):
         self.test_dataset = Dataset(p / "test", cache_in_ram=True)
 
         # Create models
-        self.diffusion_model = instantiate(cfg.diffusion_model.model).to(self._device)
+        self.diffusion_model = instantiate(
+            cfg.diffusion_model.model, num_actions=cfg.env.num_actions
+        ).to(self._device)
         self._diffusion_model = (
             build_ddp_wrapper(**self.diffusion_model._modules)
             if dist.is_initialized()
@@ -118,8 +118,8 @@ class Trainer(StateDictMixin):
 
         # Optimizers and LR schedulers
 
-        self.opt = configure_opt(
-            self.diffusion_model, **cfg.diffusion_model.training.optimizer
+        self.opt = torch.optim.AdamW(
+            self.diffusion_model.parameters(), **cfg.diffusion_model.training.optimizer
         )
 
         self.lr_sched = get_lr_sched(
@@ -166,15 +166,13 @@ class Trainer(StateDictMixin):
 
         if self._rank == 0:
             print(f"{count_parameters(self.diffusion_model)} parameters")
-            print(self.train_dataset)
-            print(self.test_dataset)
         self.diffusion = create_diffusion(
             timestep_respacing=""
         )  # default: 1000 steps, linear noise schedule
 
     def run(self) -> None:
 
-        num_epochs = self._cfg.training.num_final_epochs
+        num_epochs = self._cfg.training.num_epochs
 
         while self.epoch < num_epochs:
             self.epoch += 1
@@ -213,35 +211,17 @@ class Trainer(StateDictMixin):
         self.diffusion_model.zero_grad()
         to_log = []
         cfg = self._cfg.diffusion_model.training
-        if self.epoch > cfg.start_after_epochs:
-            steps = cfg.steps_first_epoch if self.epoch == 1 else cfg.steps_per_epoch
-            to_log = self._train(steps)
-        return to_log
-
-    @torch.no_grad()
-    def test_diffusion_model(self) -> Logs:
-        self.diffusion_model.eval()
-        to_log = []
-        cfg = self._cfg.diffusion_model.training
-        if self.epoch > cfg.start_after_epochs:
-            to_log = self._test()
-        return to_log
-
-    def _train(self, steps: int) -> Logs:
-        cfg = self._cfg.diffusion_model.training
+        num_steps = cfg.steps_per_epoch
         model = self._diffusion_model
         opt = self.opt
         lr_sched = self.lr_sched
         data_loader = self._data_loader_train
 
-        model.train()
         opt.zero_grad()
         data_iterator = iter(data_loader)
         to_log = []
 
-        num_steps = cfg.grad_acc_steps * steps
-
-        for i in trange(num_steps, desc=f"Training", disable=self._rank > 0):
+        for _ in trange(num_steps, desc=f"Training", disable=self._rank > 0):
             batch = next(data_iterator).to(self._device)
             obs, act = batch.obs, batch.act
             n = obs.shape[0]
@@ -263,19 +243,12 @@ class Trainer(StateDictMixin):
             metrics[f"num_batch_train"] = num_batch
             self.num_batch_train = num_batch + 1
 
-            if (i + 1) % cfg.grad_acc_steps == 0:
-                if cfg.max_grad_norm is not None:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), cfg.max_grad_norm
-                    )
-                    metrics["grad_norm_before_clip"] = grad_norm
+            opt.step()
+            opt.zero_grad()
 
-                opt.step()
-                opt.zero_grad()
-
-                if lr_sched is not None:
-                    metrics["lr"] = lr_sched.get_last_lr()[0]
-                    lr_sched.step()
+            if lr_sched is not None:
+                metrics["lr"] = lr_sched.get_last_lr()[0]
+                lr_sched.step()
 
             to_log.append(metrics)
 
@@ -284,7 +257,8 @@ class Trainer(StateDictMixin):
         return to_log
 
     @torch.no_grad()
-    def _test(self) -> Logs:
+    def test_diffusion_model(self) -> Logs:
+        self.diffusion_model.eval()
         model = self.diffusion_model
         data_loader = self._data_loader_test
         model.eval()

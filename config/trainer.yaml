@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - env: doom
-  - diffusion_model: doom_DiT
+  - diffusion_model: doom_DiT_small
 
 
 hydra:
@@ -32,14 +32,14 @@ checkpointing:
 
 
 static_dataset:
-  path: ${env.path_data_low_res}
+  path: ${env.data_path}
   ignore_sample_weights: True
 
 training:
   should: True
-  num_final_epochs: 1500
+  num_epochs: 1500
   cache_in_ram: False
-  num_workers_data_loaders: 4
+  num_workers_data_loaders: 0
 
 evaluation:
   should: False
