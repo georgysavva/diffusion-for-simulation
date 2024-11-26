@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
 from data import BatchSampler, Dataset, DatasetTraverser, collate_segments_to_batch
+from src.diffusion import create_diffusion
 from utils import (
     Logs,
     StateDictMixin,
@@ -171,15 +172,18 @@ class Trainer(StateDictMixin):
             print(f"{count_parameters(self.diffusion_model)} parameters")
             print(self.train_dataset)
             print(self.test_dataset)
+        self.diffusion = create_diffusion(
+            timestep_respacing=""
+        )  # default: 1000 steps, linear noise schedule
 
     def run(self) -> None:
-        to_log = []
 
         num_epochs = self._cfg.training.num_final_epochs
 
         while self.epoch < num_epochs:
             self.epoch += 1
             start_time = time.time()
+            to_log = []
 
             if self._rank == 0:
                 print(f"\nEpoch {self.epoch} / {num_epochs}\n")
@@ -201,7 +205,6 @@ class Trainer(StateDictMixin):
             to_log.append({"duration": (time.time() - start_time) / 3600})
             if self._rank == 0:
                 wandb_log(to_log, self.epoch)
-            to_log = []
 
             # Checkpointing
             self.save_checkpoint()
@@ -216,7 +219,7 @@ class Trainer(StateDictMixin):
         cfg = self._cfg.diffusion_model.training
         if self.epoch > cfg.start_after_epochs:
             steps = cfg.steps_first_epoch if self.epoch == 1 else cfg.steps_per_epoch
-            to_log += self.train_component(steps)
+            to_log = self._train(steps)
         return to_log
 
     @torch.no_grad()
@@ -225,10 +228,10 @@ class Trainer(StateDictMixin):
         to_log = []
         cfg = self._cfg.diffusion_model.training
         if self.epoch > cfg.start_after_epochs:
-            to_log += self.test_component()
+            to_log = self._test()
         return to_log
 
-    def train_component(self, steps: int) -> Logs:
+    def _train(self, steps: int) -> Logs:
         cfg = self._cfg.diffusion_model.training
         model = self._diffusion_model
         opt = self.opt
@@ -244,7 +247,13 @@ class Trainer(StateDictMixin):
 
         for i in trange(num_steps, desc=f"Training", disable=self._rank > 0):
             batch = next(data_iterator).to(self._device)
-            loss, metrics = model(batch) if batch is not None else model()
+            t = torch.randint(
+                0, self.diffusion.num_timesteps, (x.shape[0],), device=self._device
+            )
+            model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
+            loss_dict = self.diffusion.training_losses(model, x, t, model_kwargs)
+            loss = loss_dict["loss"].mean()
+            metrics = {"loss_denoising": loss.item()}
             loss.backward()
 
             num_batch = self.num_batch_train
@@ -272,7 +281,7 @@ class Trainer(StateDictMixin):
         return to_log
 
     @torch.no_grad()
-    def test_component(self) -> Logs:
+    def _test(self) -> Logs:
         model = self.diffusion_model
         data_loader = self._data_loader_test
         model.eval()

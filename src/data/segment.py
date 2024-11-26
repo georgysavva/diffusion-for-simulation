@@ -17,6 +17,4 @@ class SegmentId:
 class Segment:
     obs: torch.ByteTensor
     act: torch.IntTensor
-    end: torch.BoolTensor
-    mask_padding: torch.BoolTensor
     id: SegmentId

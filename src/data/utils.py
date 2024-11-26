@@ -28,14 +28,9 @@ def make_segment(episode: Episode, segment_id: SegmentId) -> Segment:
 
     start = max(0, segment_id.start)
     stop = min(len(episode), segment_id.stop)
-    mask_padding = torch.cat((torch.zeros(pad_len_left), torch.ones(stop - start), torch.zeros(pad_len_right))).bool()
-    ends = torch.zeros_like(episode.act, dtype=torch.bool)
-    ends[-1] = True
     return Segment(
         pad(episode.obs[start:stop]),
         pad(episode.act[start:stop]),
-        pad(ends[start:stop]),
-        mask_padding,
         id=SegmentId(segment_id.episode_id, start, stop),
     )
 
