@@ -12,19 +12,22 @@ from .segment import Segment, SegmentId
 
 
 def collate_segments_to_batch(segments: List[Segment]) -> Batch:
-    attrs = ("obs", "act", "end", "mask_padding")
+    attrs = ("obs", "act")
     stack = (torch.stack([getattr(s, x) for s in segments]) for x in attrs)
     return Batch(*stack, [s.id for s in segments])
 
 
 def make_segment(episode: Episode, segment_id: SegmentId) -> Segment:
     assert segment_id.start < len(episode) and segment_id.stop > 0 and segment_id.start < segment_id.stop
-    pad_len_right = max(0, segment_id.stop - len(episode))
+    assert segment_id.stop <= len(episode)
     pad_len_left = max(0, -segment_id.start)
 
     def pad(x):
-        right = F.pad(x, [0 for _ in range(2 * x.ndim - 1)] + [pad_len_right]) if pad_len_right > 0 else x
-        return F.pad(right, [0 for _ in range(2 * x.ndim - 2)] + [pad_len_left, 0]) if pad_len_left > 0 else right
+        return (
+            F.pad(x, [0 for _ in range(2 * x.ndim - 2)] + [pad_len_left, 0])
+            if pad_len_left > 0
+            else x
+        )
 
     start = max(0, segment_id.start)
     stop = min(len(episode), segment_id.stop)

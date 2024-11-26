@@ -42,7 +42,7 @@ training:
   num_workers_data_loaders: 4
 
 evaluation:
-  should: True
+  should: False
   every: 20
 
 

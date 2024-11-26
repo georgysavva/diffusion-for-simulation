@@ -94,11 +94,10 @@ class Trainer(StateDictMixin):
         p = Path(cfg.static_dataset.path)
         self.train_dataset = Dataset(
             p / "train",
-            "train_dataset",
             cfg.training.cache_in_ram,
             use_manager,
         )
-        self.test_dataset = Dataset(p / "test", "test_dataset", cache_in_ram=True)
+        self.test_dataset = Dataset(p / "test", cache_in_ram=True)
 
         # Create models
         self.diffusion_model = instantiate(cfg.diffusion_model.model).to(self._device)
@@ -130,11 +129,8 @@ class Trainer(StateDictMixin):
         # Data loaders
 
         c = cfg.diffusion_model.training
-        seq_length = (
-            cfg.diffusion_model.model_cfg.inner_model.num_steps_conditioning
-            + 1
-            + c.num_autoregressive_steps
-        )
+        seq_length = cfg.diffusion_model.model.num_conditioning_steps + 1
+
         batch_sampler = BatchSampler(
             self.train_dataset,
             self._rank,
@@ -247,11 +243,18 @@ class Trainer(StateDictMixin):
 
         for i in trange(num_steps, desc=f"Training", disable=self._rank > 0):
             batch = next(data_iterator).to(self._device)
+            obs, act = batch.obs, batch.act
+            n = obs.shape[0]
             t = torch.randint(
-                0, self.diffusion.num_timesteps, (x.shape[0],), device=self._device
+                0, self.diffusion.num_timesteps, (n,), device=self._device
             )
+            prev_obs = obs[:, :-1]
+            prev_act = act[:, :-1]
             model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
-            loss_dict = self.diffusion.training_losses(model, x, t, model_kwargs)
+            current_obs = obs[:, -1]
+            loss_dict = self.diffusion.training_losses(
+                model, current_obs, t, model_kwargs
+            )
             loss = loss_dict["loss"].mean()
             metrics = {"loss_denoising": loss.item()}
             loss.backward()
