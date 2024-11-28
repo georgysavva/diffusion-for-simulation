@@ -19,3 +19,9 @@ _vizdoom/
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# jack
+vae_data/
+vae_output/
+depre/
+*.jpg
+*.png
