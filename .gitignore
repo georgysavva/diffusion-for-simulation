@@ -18,4 +18,4 @@ _vizdoom.ini
 _vizdoom/
 # Jupyter Notebook
 .ipynb_checkpoints
-
+.local/
