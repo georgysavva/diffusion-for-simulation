@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
-from data import BatchSampler, Dataset, DatasetTraverser, collate_segments_to_batch
+from data import BatchSampler, Dataset, TestDatasetTraverser, collate_segments_to_batch
 from diffusion import create_diffusion
 from utils import (
     Logs,
@@ -149,7 +149,7 @@ class Trainer(StateDictMixin):
             batch_sampler=batch_sampler,
         )
 
-        self._data_loader_test = DatasetTraverser(
+        self._data_loader_test = TestDatasetTraverser(
             self.test_dataset, c.batch_size, seq_length
         )
 
@@ -285,3 +285,7 @@ class Trainer(StateDictMixin):
             save_with_backup(self.state_dict(), self._path_state_ckpt)
             self._keep_model_copies(self.diffusion_model.state_dict(), self.epoch)
             self._save_info_for_import_script(self.epoch)
+
+
+def call_model():
+    pass

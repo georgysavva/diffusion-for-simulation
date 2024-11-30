@@ -103,21 +103,21 @@ def make_segment(episode: Episode, segment_id: SegmentId) -> Segment:
     )
 
 
-class DatasetTraverser:
+class TestDatasetTraverser:
 
     def __init__(
-        self, dataset: Dataset, batch_num_samples: int, chunk_size: int
+        self, dataset: Dataset, batch_num_samples: int, seq_length: int
     ) -> None:
         self.dataset = dataset
         self.batch_num_samples = batch_num_samples
-        self.chunk_size = chunk_size
+        self.seq_length = seq_length
 
     def __len__(self):
         return math.ceil(
             sum(
                 [
-                    math.ceil(self.dataset.lengths[episode_id] / self.chunk_size)
-                    - int(self.dataset.lengths[episode_id] % self.chunk_size == 1)
+                    math.ceil(self.dataset.lengths[episode_id] / self.seq_length)
+                    - int(self.dataset.lengths[episode_id] % self.seq_length == 1)
                     for episode_id in range(self.dataset.num_episodes)
                 ]
             )
@@ -128,9 +128,9 @@ class DatasetTraverser:
         chunks = []
         for episode_id in range(self.dataset.num_episodes):
             episode = self.dataset.load_episode(episode_id)
-            for i in range(math.ceil(len(episode) / self.chunk_size)):
-                start = i * self.chunk_size
-                stop = (i + 1) * self.chunk_size
+            for i in range(math.ceil(len(episode) / self.seq_length)):
+                start = i * self.seq_length
+                stop = (i + 1) * self.seq_length
                 segment = make_segment(
                     episode,
                     SegmentId(episode_id, start, stop),
