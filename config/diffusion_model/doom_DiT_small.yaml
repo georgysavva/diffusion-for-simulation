@@ -1,0 +1,26 @@
+model:
+  _target_: models.DiT.DiT
+  num_actions: ...
+  num_conditioning_steps: 8
+  input_size: 32
+  patch_size: 8
+  in_channels: 3
+  hidden_size: 32
+  depth: 6
+  num_heads: 4
+  mlp_ratio: 4.0
+  time_frequency_embedding_size: 32
+
+    
+training:
+  batch_size: 5
+  steps_per_epoch: 400
+  lr_warmup_steps: 100
+  
+
+  optimizer:
+    lr: 1e-4
+    weight_decay: 1e-2
+    eps: 1e-8
+  
+

@@ -10,10 +10,8 @@ from .segment import SegmentId
 
 @dataclass
 class Batch:
-    obs: torch.ByteTensor
+    obs: torch.Tensor
     act: torch.IntTensor
-    end: torch.BoolTensor
-    mask_padding: torch.BoolTensor
     segment_ids: List[SegmentId]
 
     def pin_memory(self) -> Batch:

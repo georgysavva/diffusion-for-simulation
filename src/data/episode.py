@@ -9,7 +9,7 @@ import torch
 
 @dataclass
 class Episode:
-    obs: torch.ByteTensor
+    obs: torch.Tensor
     act: torch.IntTensor
 
     def __len__(self) -> int:
@@ -21,4 +21,7 @@ class Episode:
     @classmethod
     def load(cls, path: Path, map_location: Optional[torch.device] = None) -> Episode:
         data = torch.load(path, map_location=map_location)
-        return cls(obs=data["observations"], act=data["actions"])
+        obs = data["observations"]
+        act = data["actions"].to(torch.int32)
+
+        return cls(obs=obs, act=act)
