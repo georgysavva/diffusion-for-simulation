@@ -223,20 +223,7 @@ class Trainer(StateDictMixin):
 
         for _ in trange(num_steps, desc=f"Training", disable=self._rank > 0):
             batch = next(data_iterator).to(self._device)
-            obs, act = batch.obs, batch.act
-            n = obs.shape[0]
-            t = torch.randint(
-                0, self.diffusion.num_timesteps, (n,), device=self._device
-            )
-            prev_obs = obs[:, :-1]
-            prev_act = act[:, :-1]
-            model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
-            current_obs = obs[:, -1]
-            loss_dict = self.diffusion.training_losses(
-                model, current_obs, t, model_kwargs
-            )
-            loss = loss_dict["loss"].mean()
-            metrics = {"loss_denoising": loss.item()}
+            loss, metrics = self.call_model(model, batch)
             loss.backward()
 
             num_batch = self.num_batch_train
@@ -265,7 +252,7 @@ class Trainer(StateDictMixin):
         to_log = []
         for batch in tqdm(data_loader, desc="Evaluating"):
             batch = batch.to(self._device)
-            _, metrics = model(batch)
+            _, metrics = self.call_model(model, batch)
             num_batch = self.num_batch_test
             metrics["num_batch_test"] = num_batch
             self.num_batch_test = num_batch + 1
@@ -286,6 +273,15 @@ class Trainer(StateDictMixin):
             self._keep_model_copies(self.diffusion_model.state_dict(), self.epoch)
             self._save_info_for_import_script(self.epoch)
 
-
-def call_model():
-    pass
+    def call_model(self, model, batch):
+        obs, act = batch.obs, batch.act
+        n = obs.shape[0]
+        t = torch.randint(0, self.diffusion.num_timesteps, (n,), device=self._device)
+        prev_obs = obs[:, :-1]
+        prev_act = act[:, :-1]
+        model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
+        current_obs = obs[:, -1]
+        loss_dict = self.diffusion.training_losses(model, current_obs, t, model_kwargs)
+        loss = loss_dict["loss"].mean()
+        metrics = {"loss_denoising": loss.item()}
+        return loss, metrics

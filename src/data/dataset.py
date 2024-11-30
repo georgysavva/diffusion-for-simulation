@@ -116,8 +116,7 @@ class TestDatasetTraverser:
         return math.ceil(
             sum(
                 [
-                    math.ceil(self.dataset.lengths[episode_id] / self.seq_length)
-                    - int(self.dataset.lengths[episode_id] % self.seq_length == 1)
+                    math.floor(self.dataset.lengths[episode_id] / self.seq_length)
                     for episode_id in range(self.dataset.num_episodes)
                 ]
             )
@@ -128,7 +127,7 @@ class TestDatasetTraverser:
         chunks = []
         for episode_id in range(self.dataset.num_episodes):
             episode = self.dataset.load_episode(episode_id)
-            for i in range(math.ceil(len(episode) / self.seq_length)):
+            for i in range(math.floor(len(episode) / self.seq_length)):
                 start = i * self.seq_length
                 stop = (i + 1) * self.seq_length
                 segment = make_segment(
