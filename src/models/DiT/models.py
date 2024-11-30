@@ -84,8 +84,15 @@ class DiTBlock(nn.Module):
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
+        self.cross_obs_norm = nn.LayerNorm(
+            hidden_size, elementwise_affine=False, eps=1e-6
+        )
         self.cross_attn_obs = nn.MultiheadAttention(
             embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+        )
+
+        self.cross_act_norm = nn.LayerNorm(
+            hidden_size, elementwise_affine=False, eps=1e-6
         )
         self.cross_attn_act = nn.MultiheadAttention(
             embed_dim=hidden_size, num_heads=num_heads, batch_first=True
@@ -95,26 +102,28 @@ class DiTBlock(nn.Module):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(t).chunk(6, dim=1)
         )
-        x = x + gate_msa.unsqueeze(1) * self.attn(
-            modulate(self.norm1(x), shift_msa, scale_msa)
-        )
+
         # Cross-Attention on prev_obs
         obs_conditioned, _ = self.cross_attn_obs(
-            query=x,  # (N, T, D)
+            query=self.cross_obs_norm(x),  # (N, T, D)
             key=prev_obs,  # (N, steps * T, D)
             value=prev_obs,  # (N, steps * T, D)
             need_weights=False,
         )
         x = x + obs_conditioned  # (N, T, D)
-
         # Cross-Attention on prev_act
         act_conditioned, _ = self.cross_attn_act(
-            query=x,  # (N, T, D)
+            query=self.cross_act_norm(x),  # (N, T, D)
             key=prev_act,  # (N, steps, D)
             value=prev_act,  # (N, steps, D)
             need_weights=False,
         )
         x = x + act_conditioned  # (N, T, D)
+
+        x = x + gate_msa.unsqueeze(1) * self.attn(
+            modulate(self.norm1(x), shift_msa, scale_msa)
+        )
+
         x = x + gate_mlp.unsqueeze(1) * self.mlp(
             modulate(self.norm2(x), shift_mlp, scale_mlp)
         )
@@ -151,14 +160,16 @@ class ActionEmbedder(nn.Module):
     def __init__(self, num_actions, num_conditioning_steps, hidden_size):
         super().__init__()
         self.embedding_table = nn.Embedding(num_actions, hidden_size)
-        pos_embed = get_1d_sincos_pos_embed(num_conditioning_steps, hidden_size)
-        self.pos_embed = nn.Parameter(
-            pos_embed.float().unsqueeze(0), requires_grad=False
+        time_embed = get_1d_sincos_pos_embed_from_grid(
+            hidden_size, np.arange(num_conditioning_steps, dtype=np.float32)
+        )
+        self.time_embed = nn.Parameter(
+            torch.from_numpy(time_embed).float().unsqueeze(0), requires_grad=False
         )
 
     def forward(self, actions):
         embeddings = self.embedding_table(actions)
-        embeddings = embeddings + self.pos_embed
+        embeddings = embeddings + self.time_embed
         return embeddings
 
 
@@ -174,25 +185,37 @@ class PreviousObservationEmbedder(nn.Module):
         self.patch_embed = PatchEmbed(
             image_size, patch_size, in_channels, hidden_size, bias=True
         )
-        num_patches = self.patch_embed.num_patches
-        pos_embed = get_1d_sincos_pos_embed(
-            num_conditioning_steps * num_patches, hidden_size
+        self.num_patches = self.patch_embed.num_patches
+        pos_embed = get_1d_sincos_pos_embed_from_grid(
+            hidden_size,
+            np.arange(self.num_patches, dtype=np.float32),
         )
         self.pos_embed = nn.Parameter(
-            pos_embed.float().unsqueeze(0), requires_grad=False
+            torch.from_numpy(pos_embed).float().unsqueeze(0), requires_grad=False
+        )
+        time_embed = get_1d_sincos_pos_embed_from_grid(
+            hidden_size,
+            np.arange(num_conditioning_steps, dtype=np.float32),
+        )
+        self.time_embed = nn.Parameter(
+            torch.from_numpy(time_embed).float().unsqueeze(0), requires_grad=False
         )
 
     def forward(self, prev_obs):
         N, steps = prev_obs.shape[:2]
         prev_obs = einops.rearrange(prev_obs, "N steps C H W -> (N steps) C H W")
-        prev_obs = self.patch_embed(prev_obs)
-        prev_obs = einops.rearrange(
-            prev_obs, "(N steps) T embed_dim -> N steps T embed_dim", N=N, steps=steps
-        )
-        prev_obs = einops.rearrange(
-            prev_obs, "N steps T embed_dim -> N (steps T) embed_dim"
-        )
+        prev_obs = self.patch_embed(prev_obs)  # (N * steps, T, embed_dim)
         prev_obs = prev_obs + self.pos_embed
+        prev_obs = einops.rearrange(
+            prev_obs, "(N steps) T embed_dim -> (N T) steps embed_dim", N=N, steps=steps
+        )
+        prev_obs = prev_obs + self.time_embed
+        prev_obs = einops.rearrange(
+            prev_obs,
+            "(N T) steps embed_dim -> N (steps T) embed_dim",
+            N=N,
+            T=self.num_patches,
+        )
         return prev_obs
 
 
@@ -381,20 +404,6 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 
     emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
     return emb
-
-
-def get_1d_sincos_pos_embed(seq_len: int, embed_dim: int) -> torch.Tensor:
-
-    assert embed_dim % 2 == 0
-    pe = torch.zeros(seq_len, embed_dim)
-    position = torch.arange(0, seq_len).unsqueeze(1)
-    div_term = torch.pow(10000.0, torch.arange(0, embed_dim, 2) / embed_dim)
-    out = position / div_term
-    even = torch.sin(out)
-    odd = torch.cos(out)
-    pe[:, 0::2] = even
-    pe[:, 1::2] = odd
-    return pe
 
 
 #################################################################################

@@ -22,7 +22,7 @@ initialization:
   load_denoiser: True
 
 common:
-  devices: 0  # int, list of int, cpu, or all 
+  devices: cpu  # int, list of int, cpu, or all 
   seed: null
   resume: False # do not modify, set by scripts/resume.sh only.
 
