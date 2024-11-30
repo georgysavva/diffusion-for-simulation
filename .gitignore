@@ -18,4 +18,12 @@ _vizdoom.ini
 _vizdoom/
 # Jupyter Notebook
 .ipynb_checkpoints
+# jack
+vae_data/
+vae_output/
+depre/
+*.jpg
+*.png
+
+# georgy
 .local/

@@ -7,6 +7,45 @@ import gymnasium as gym
 import torch
 from tqdm import tqdm
 from vizdoom import gymnasium_wrapper  # to register envs
+import imageio
+
+
+def collect_observations_only(env, num_episodes, save_path, skip_frames):
+    os.makedirs(save_path, exist_ok=True)
+    for episode in tqdm(range(num_episodes), desc="Sampling episodes"):
+        all_observations = []
+        observation, _ = env.reset()
+        done = False
+
+        curr_step = 0
+        while not done:
+            # Random action
+            action = env.action_space.sample()
+
+            # Step environment
+            (
+                next_observation,
+                _,
+                terminated,
+                truncated,
+                _,
+            ) = env.step(action)
+
+            # Save episode data
+            if curr_step % skip_frames == 0:
+                all_observations.append(torch.from_numpy(observation["screen"]))
+
+            observation = next_observation
+            done = terminated or truncated
+            curr_step += 1
+
+        all_observations = torch.stack(all_observations)
+        # Save episode data to disk
+        episode_file = os.path.join(save_path, f"episode_{episode}.pt")
+        torch.save(all_observations, episode_file)
+        # imageio.mimsave(f'output{episode}.gif', all_observations.numpy(), fps=30)
+        print('frames', all_observations.shape[0])
+        print(f"Episode {episode} saved to {episode_file}")
 
 
 # Collect episodes using a random policy
@@ -92,6 +131,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_episodes", type=int, default=1, help="Number of episodes to sample"
     )
+    # for jack to train vae:
+    parser.add_argument("--observations_only", action='store_true', help='whether to only save observations')
+    parser.add_argument("--skip_frames", type=int, default=1, help='number of frames between each saved one (only for observations_only)')
     args = parser.parse_args()
 
     env_id = (
@@ -103,6 +145,9 @@ if __name__ == "__main__":
     # Create environment
     env = gym.make(env_id)
     try:
-        collect_episodes(env, num_episodes, save_path)
+        if not args.observations_only:
+            collect_episodes(env, num_episodes, save_path)
+        else:
+            collect_observations_only(env, num_episodes, save_path, args.skip_frames)
     finally:
         env.close()
