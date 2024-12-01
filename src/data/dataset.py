@@ -29,9 +29,11 @@ class Dataset(TorchDataset):
         self._cache_in_ram = cache_in_ram
         self._cache = mp.Manager().dict() if use_manager else {}
         with open(self._directory / "episodes_info.json", "r") as json_file:
-            episodes_info = json.load(json_file)
-        self._num_episodes = episodes_info["episodes_num"]
-        self._lengths = np.array([ep["length"] for ep in episodes_info["episodes"]])
+            self.episodes_info = json.load(json_file)
+        self._num_episodes = self.episodes_info["episodes_num"]
+        self._lengths = np.array(
+            [ep["length"] for ep in self.episodes_info["episodes"]]
+        )
 
     @property
     def num_episodes(self) -> int:

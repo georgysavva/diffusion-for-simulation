@@ -6,7 +6,7 @@ torcheval
 torchvision
 tqdm
 # wandb # jack: for some reason newest version doesnt work for me on greene
-wandb====0.17.9
+wandb==0.17.9
 vizdoom
 gymnasium
 # opencv-python

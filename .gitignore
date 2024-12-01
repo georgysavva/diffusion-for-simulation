@@ -24,6 +24,7 @@ vae_output/
 depre/
 *.jpg
 *.png
+*.egg-info
 
 # georgy
 .local/
