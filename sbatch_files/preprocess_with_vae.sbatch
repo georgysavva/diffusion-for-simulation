@@ -17,4 +17,4 @@ source /share/apps/anaconda3/2020.07/etc/profile.d/conda.sh;
 conda activate ./penv;
 export PATH=./penv/bin:$PATH;
 
-python scripts/preprocess_data_with_vae.py
+python scripts/preprocess_data_with_vae.py --dataset_type test

@@ -67,18 +67,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size", type=int, default=256, help="Batch size for inference"
     )
+    parser.add_argument(
+        "--dataset_type", type=str, default="train", help="Dataset type to preprocess"
+    )
     args = parser.parse_args()
+    dataset_type = args.dataset_type
+    print(f"Preprocessing {dataset_type} data...")
     data_path, save_path = Path(args.data_path), Path(args.save_path)
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema")
     vae.eval()
     vae.to(args.device)
-    for dataset_type in ["train", "test"]:
 
-        dataset = Dataset(
-            data_path / "train",
+    dataset = Dataset(
+        data_path / dataset_type,
+    )
+    with torch.no_grad():
+        preprocess_data_with_vae(
+            dataset, save_path / dataset_type, vae, args.resolution, args.batch_size
         )
-        print(f"Preprocessing {dataset_type} data...")
-        with torch.no_grad():
-            preprocess_data_with_vae(
-                dataset, save_path / dataset_type, vae, args.resolution, args.batch_size
-            )
