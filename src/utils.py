@@ -1,4 +1,5 @@
 import json
+import os
 import random
 from argparse import Namespace
 from functools import partial
@@ -12,6 +13,7 @@ import wandb
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LambdaLR
+from torchvision.datasets.utils import download_url
 
 Logs = List[Dict[str, float]]
 LossAndLogs = Tuple[Tensor, Dict[str, Any]]
@@ -221,3 +223,16 @@ def try_until_no_except(func: Callable) -> None:
 def wandb_log(logs: Logs, epoch: int):
     for d in logs:
         wandb.log({"epoch": epoch, **d})
+
+
+def download_model_weights(url: str, save_path: str, device: torch.device):
+    """
+    Downloads a pre-trained model from the web.
+    """
+    model_name = os.path.basename(url)
+    local_path = f"{save_path}/{model_name}"
+    if not os.path.isfile(local_path):
+        os.makedirs(save_path, exist_ok=True)
+        download_url(url, save_path, filename=model_name)
+    model = torch.load(local_path, map_location=device)
+    return model

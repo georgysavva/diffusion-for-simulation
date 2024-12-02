@@ -9,18 +9,23 @@ hydra:
     chdir: True
 
 wandb:
-  project: null
-  entity: null
+  project: diffusion-for-simulation-doom
+  entity: diffusion-for-simulation
   name: null
   group: null
   tags: null
   notes: null
 
+# pretrained_weights:
+#   url: https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-256x256.pt
+#   save_path: /scratch/gs4288/shared/diffusion_for_simulation/pretrained_weights/
+pretrained_weights: null
+
 initialization:
   path_to_ckpt: null
 
 common:
-  devices: all  # int, list of int, cpu, or all 
+  devices: 0  # int, list of int, cpu, or all 
   seed: null
   resume: False # do not modify, set by scripts/resume.sh only.
 

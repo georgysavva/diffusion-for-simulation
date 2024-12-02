@@ -18,6 +18,7 @@ from utils import (
     StateDictMixin,
     build_ddp_wrapper,
     count_parameters,
+    download_model_weights,
     get_lr_sched,
     keep_model_copies_every,
     process_confusion_matrices_if_any_and_compute_classification_metrics,
@@ -98,19 +99,33 @@ class Trainer(StateDictMixin):
         self.test_dataset = Dataset(p / "test", cache_in_ram=True)
 
         # Create models
+        if self._rank == 0:
+            print("Instantiating model")
         self.diffusion_model = instantiate(
             cfg.diffusion_model.model, num_actions=cfg.env.num_actions
         ).to(self._device)
+        if self._rank == 0:
+            print(f"{count_parameters(self.diffusion_model)} parameters")
         self._diffusion_model = (
             build_ddp_wrapper(**self.diffusion_model._modules)
             if dist.is_initialized()
             else self.diffusion_model
         )
+        assert (
+            cfg.pretrained_weights is None or cfg.initialization.path_to_ckpt is None
+        ), "Only one of pretrained_weights or path_to_ckpt should be provided"
+        if cfg.pretrained_weights is not None:
+            weights = download_model_weights(
+                cfg.pretrained_weights.url,
+                cfg.pretrained_weights.save_path,
+                self._device,
+            )
+            self.diffusion_model.load_pretrained_weights(weights)
 
         if cfg.initialization.path_to_ckpt is not None:
             sd = torch.load(
                 Path(cfg.initialization.path_to_ckp),
-                map_location=self.diffusion_model.device,
+                map_location=self._device,
             )
             self.diffusion_model.load_state_dict(sd)
 
@@ -164,8 +179,6 @@ class Trainer(StateDictMixin):
         else:
             self.save_checkpoint()
 
-        if self._rank == 0:
-            print(f"{count_parameters(self.diffusion_model)} parameters")
         self.diffusion = create_diffusion(
             timestep_respacing=""
         )  # default: 1000 steps, linear noise schedule

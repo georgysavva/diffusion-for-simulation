@@ -1,4 +1,4 @@
 id: doom
 num_actions: 6 # 5 buttons + 1 no-op
-data_path: /scratch/gs4288/shared/diffusion_for_simulation/data/doom/ # TO DEFINE
+data_path: /scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent/ 
 

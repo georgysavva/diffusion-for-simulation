@@ -10,4 +10,5 @@ This repository is based on the [diamond](https://github.com/eloialonso/diamond/
 2. Activate the conda environment: `conda activate ./penv`
 3. Install python dependencies: `pip install -r requirements.txt`. Whenever you add new python dependencies don't forget to add them to the `requirements.txt` file.
 4. Install the root package `pip install -e .`
-5. Everything is ready!
+5. Login to wandb `wandb login`
+6. Everything is ready!
