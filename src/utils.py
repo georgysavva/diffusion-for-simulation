@@ -19,41 +19,6 @@ Logs = List[Dict[str, float]]
 LossAndLogs = Tuple[Tensor, Dict[str, Any]]
 
 
-class StateDictMixin:
-    def _init_fields(self) -> None:
-        def has_sd(x: str) -> bool:
-            return callable(getattr(x, "state_dict", None)) and callable(
-                getattr(x, "load_state_dict", None)
-            )
-
-        self._all_fields = {k for k in vars(self) if not k.startswith("_")}
-        self._fields_sd = {k for k in self._all_fields if has_sd(getattr(self, k))}
-
-    def _get_field(self, k: str) -> Any:
-        return (
-            getattr(self, k).state_dict() if k in self._fields_sd else getattr(self, k)
-        )
-
-    def _set_field(self, k: str, v: Any) -> None:
-        (
-            getattr(self, k).load_state_dict(v)
-            if k in self._fields_sd
-            else setattr(self, k, v)
-        )
-
-    def state_dict(self) -> Dict[str, Any]:
-        if not hasattr(self, "_all_fields"):
-            self._init_fields()
-        return {k: self._get_field(k) for k in self._all_fields}
-
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        if not hasattr(self, "_all_fields"):
-            self._init_fields()
-        assert set(list(state_dict.keys())) == self._all_fields
-        for k, v in state_dict.items():
-            self._set_field(k, v)
-
-
 def build_ddp_wrapper(**modules_dict: Dict[str, nn.Module]) -> Namespace:
     return Namespace(**{name: DDP(module) for name, module in modules_dict.items()})
 
@@ -174,11 +139,6 @@ def process_confusion_matrices_if_any_and_compute_classification_metrics(
         logs.append(metrics)  # Append the obtained metrics to logs (in place)
 
 
-def save_info_for_import_script(epoch: int, run_name: str, path_ckpt_dir: Path) -> None:
-    with (path_ckpt_dir / "info_for_import_script.json").open("w") as f:
-        json.dump({"epoch": epoch, "name": run_name}, f)
-
-
 def save_with_backup(obj: Any, path: Path):
     bk = path.with_suffix(".bk")
     if path.is_file():
@@ -192,20 +152,6 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     random.seed(seed)
-
-
-def skip_if_run_is_over(func: Callable) -> Callable:
-    def inner(*args, **kwargs):
-        path_run_is_over = Path(".run_is_over")
-        if not path_run_is_over.is_file():
-            func(*args, **kwargs)
-            path_run_is_over.touch()
-        else:
-            print(
-                f"Run is marked as finished. To unmark, remove '{str(path_run_is_over)}'."
-            )
-
-    return inner
 
 
 def try_until_no_except(func: Callable) -> None:

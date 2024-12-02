@@ -15,22 +15,19 @@ from data import BatchSampler, Dataset, TestDatasetTraverser, collate_segments_t
 from diffusion import create_diffusion
 from utils import (
     Logs,
-    StateDictMixin,
     build_ddp_wrapper,
     count_parameters,
     download_model_weights,
     get_lr_sched,
     keep_model_copies_every,
     process_confusion_matrices_if_any_and_compute_classification_metrics,
-    save_info_for_import_script,
-    save_with_backup,
     set_seed,
     try_until_no_except,
     wandb_log,
 )
 
 
-class Trainer(StateDictMixin):
+class Trainer:
     def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         OmegaConf.resolve(cfg)
@@ -59,42 +56,27 @@ class Trainer(StateDictMixin):
                     wandb.init,
                     config=OmegaConf.to_container(cfg, resolve=True),
                     reinit=True,
-                    resume=True,
                     **cfg.wandb,
                 )
             )
         # Checkpointing
-        self._path_ckpt_dir = Path("checkpoints")
-        self._path_state_ckpt = self._path_ckpt_dir / "state.pt"
+        self._path_ckpt_dir = Path(cfg.checkpointing.save_path) / wandb.run.name
         self._keep_model_copies = partial(
             keep_model_copies_every,
             every=cfg.checkpointing.save_diffusion_model_every,
             path_ckpt_dir=self._path_ckpt_dir,
             num_to_keep=cfg.checkpointing.num_to_keep,
         )
-        self._save_info_for_import_script = partial(
-            save_info_for_import_script,
-            run_name=cfg.wandb.name,
-            path_ckpt_dir=self._path_ckpt_dir,
-        )
 
         # First time, init files hierarchy
-        if not cfg.common.resume and self._rank == 0:
+        if self._rank == 0:
             self._path_ckpt_dir.mkdir(exist_ok=False, parents=False)
-            path_config = Path("config") / "trainer.yaml"
-            path_config.parent.mkdir(exist_ok=False, parents=False)
-            shutil.move(".hydra/config.yaml", path_config)
-            wandb.save(str(path_config))
-            shutil.copytree(src=root_dir / "src", dst="./src")
-            shutil.copytree(src=root_dir / "scripts", dst="./scripts")
 
         num_workers = cfg.training.num_workers_data_loaders
-        use_manager = cfg.training.cache_in_ram and (num_workers > 0)
         p = Path(cfg.static_dataset.path)
         self.train_dataset = Dataset(
             p / "train",
-            cfg.training.cache_in_ram,
-            use_manager,
+            cache_in_ram=False,
         )
         self.test_dataset = Dataset(p / "test", cache_in_ram=True)
 
@@ -173,11 +155,6 @@ class Trainer(StateDictMixin):
         self.num_episodes_test = 0
         self.num_batch_train = 0
         self.num_batch_test = 0
-
-        if cfg.common.resume:
-            self.load_state_checkpoint()
-        else:
-            self.save_checkpoint()
 
         self.diffusion = create_diffusion(
             timestep_respacing=""
@@ -275,16 +252,9 @@ class Trainer(StateDictMixin):
         to_log = [{f"test/{k}": v for k, v in d.items()} for d in to_log]
         return to_log
 
-    def load_state_checkpoint(self) -> None:
-        self.load_state_dict(
-            torch.load(self._path_state_ckpt, map_location=self._device)
-        )
-
     def save_checkpoint(self) -> None:
         if self._rank == 0:
-            save_with_backup(self.state_dict(), self._path_state_ckpt)
             self._keep_model_copies(self.diffusion_model.state_dict(), self.epoch)
-            self._save_info_for_import_script(self.epoch)
 
     def call_model(self, model, batch):
         obs, act = batch.obs, batch.act

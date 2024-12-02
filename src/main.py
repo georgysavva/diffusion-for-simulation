@@ -3,14 +3,12 @@ from pathlib import Path
 from typing import List, Union
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
 import torch
-from torch.distributed import init_process_group, destroy_process_group
 import torch.multiprocessing as mp
+from omegaconf import DictConfig, OmegaConf
+from torch.distributed import destroy_process_group, init_process_group
 
 from trainer import Trainer
-from utils import skip_if_run_is_over
-
 
 OmegaConf.register_new_resolver("eval", eval)
 
@@ -32,7 +30,6 @@ def main_ddp(rank: int, world_size: int, cfg: DictConfig, root_dir: Path) -> Non
     destroy_process_group()
 
 
-@skip_if_run_is_over
 def run(cfg: DictConfig, root_dir: Path) -> None:
     trainer = Trainer(cfg, root_dir)
     trainer.run()
