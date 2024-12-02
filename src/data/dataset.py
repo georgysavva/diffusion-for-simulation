@@ -53,6 +53,7 @@ class Dataset(TorchDataset):
             episode = self._cache[episode_id]
         else:
             episode = Episode.load(self._get_episode_path(episode_id))
+            episode.obs = episode.obs.mul_(0.18215)
             if self._cache_in_ram:
                 self._cache[episode_id] = episode
         return episode
@@ -87,16 +88,6 @@ def make_segment(episode: Episode, segment_id: SegmentId) -> Segment:
     start = max(0, segment_id.start)
     stop = min(len(episode), segment_id.stop)
     obs = pad(episode.obs[start:stop])
-    #### For debugging with images
-    obs = einops.rearrange(obs, "steps H W C -> steps C H W")
-    obs = obs[
-        :,
-        :,
-        :32,
-        :32,
-    ]  # dummy resize to 32x32
-    obs = obs.float() / 255.0
-    ####
     act = pad(episode.act[start:stop])
     return Segment(
         obs,

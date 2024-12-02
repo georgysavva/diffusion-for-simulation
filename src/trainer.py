@@ -172,7 +172,7 @@ class Trainer(StateDictMixin):
 
     def run(self) -> None:
 
-        num_epochs = self._cfg.training.num_epochs
+        num_epochs = self._cfg.diffusion_model.training.num_epochs
 
         while self.epoch < num_epochs:
             self.epoch += 1

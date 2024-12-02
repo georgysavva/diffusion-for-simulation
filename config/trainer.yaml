@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - env: doom
-  - diffusion_model: doom_DiT_small
+  - diffusion_model: doom_DiT
 
 
 hydra:
@@ -9,7 +9,6 @@ hydra:
     chdir: True
 
 wandb:
-  mode: disabled
   project: null
   entity: null
   name: null
@@ -19,10 +18,9 @@ wandb:
 
 initialization:
   path_to_ckpt: null
-  load_denoiser: True
 
 common:
-  devices: cpu  # int, list of int, cpu, or all 
+  devices: all  # int, list of int, cpu, or all 
   seed: null
   resume: False # do not modify, set by scripts/resume.sh only.
 
@@ -37,7 +35,6 @@ static_dataset:
 
 training:
   should: True
-  num_epochs: 1500
   cache_in_ram: False
   num_workers_data_loaders: 0
 
