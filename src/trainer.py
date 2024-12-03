@@ -253,5 +253,5 @@ class Trainer:
         model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
         current_obs = obs[:, -1]
         loss_dict = self.diffusion.training_losses(model, current_obs, t, model_kwargs)
-        loss = loss_dict["loss"].mean().item()
+        loss = loss_dict["loss"].mean()
         return loss

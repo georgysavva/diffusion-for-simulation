@@ -128,8 +128,6 @@ class TestDatasetTraverser:
                     SegmentId(episode_id, start, stop),
                 )
                 chunks.append(segment)
-            if chunks[-1].effective_size < 2:
-                chunks.pop()
 
             while len(chunks) >= self.batch_num_samples:
                 yield collate_segments_to_batch(chunks[: self.batch_num_samples])
