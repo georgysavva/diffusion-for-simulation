@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - env: doom
-  - diffusion_model: doom_DiT_small
+  - diffusion_model: doom_DiT
 
 
 hydra:
@@ -9,24 +9,28 @@ hydra:
     chdir: True
 
 wandb:
-  mode: disabled
-  project: null
-  entity: null
+  project: diffusion-for-simulation-doom
+  entity: diffusion-for-simulation
   name: null
   group: null
   tags: null
   notes: null
 
+# pretrained_weights:
+#   url: https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-256x256.pt
+#   save_path: ${common.project_storage_base_path}/pretrained_weights/
+pretrained_weights: null
+
 initialization:
   path_to_ckpt: null
-  load_denoiser: True
 
 common:
-  devices: cpu  # int, list of int, cpu, or all 
+  devices: 0  # int, list of int, cpu, or all 
   seed: null
-  resume: False # do not modify, set by scripts/resume.sh only.
+  project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation
 
 checkpointing:
+  save_path: ${common.project_storage_base_path}/checkpoints/
   save_diffusion_model_every: 5
   num_to_keep: 11  # number of checkpoints to keep, use null to disable
 
@@ -37,12 +41,10 @@ static_dataset:
 
 training:
   should: True
-  num_epochs: 1500
-  cache_in_ram: False
   num_workers_data_loaders: 0
 
 evaluation:
-  should: False
-  every: 20
+  should: True
+  every: 5
 
 

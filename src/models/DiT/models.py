@@ -268,6 +268,14 @@ class DiT(nn.Module):
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
 
+    def load_pretrained_weights(self, weights):
+        missing_keys, unexpected_keys = self.load_state_dict(
+            weights, strict=False
+        )  # This doesn't work yet. Fix the layers.
+        print(
+            f"Loaded pretrained weights. Missing keys: {missing_keys}. Unexpected keys: {unexpected_keys}"
+        )
+
     def initialize_weights(self):
         # Initialize transformer layers:
         def _basic_init(module):
