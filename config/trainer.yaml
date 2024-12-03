@@ -44,7 +44,7 @@ training:
   num_workers_data_loaders: 0
 
 evaluation:
-  should: False
-  every: 20
+  should: True
+  every: 5
 
 

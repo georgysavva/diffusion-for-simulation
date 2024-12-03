@@ -14,7 +14,7 @@ model:
 
 training:
   batch_size: 32
-  steps_per_epoch: 50
+  steps_per_epoch: 5
   num_epochs: 1600
   lr_warmup_steps: 100
 

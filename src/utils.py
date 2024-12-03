@@ -15,44 +15,9 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LambdaLR
 from torchvision.datasets.utils import download_url
 
-Logs = List[Dict[str, float]]
-LossAndLogs = Tuple[Tensor, Dict[str, Any]]
-
 
 def build_ddp_wrapper(**modules_dict: Dict[str, nn.Module]) -> Namespace:
     return Namespace(**{name: DDP(module) for name, module in modules_dict.items()})
-
-
-def compute_classification_metrics(
-    confusion_matrix: Tensor,
-) -> Tuple[Tensor, Tensor, Tensor]:
-    num_classes = confusion_matrix.size(0)
-    precision = torch.zeros(num_classes)
-    recall = torch.zeros(num_classes)
-    f1_score = torch.zeros(num_classes)
-
-    for i in range(num_classes):
-        true_positive = confusion_matrix[i, i].item()
-        false_positive = confusion_matrix[:, i].sum().item() - true_positive
-        false_negative = confusion_matrix[i, :].sum().item() - true_positive
-
-        precision[i] = (
-            true_positive / (true_positive + false_positive)
-            if (true_positive + false_positive) != 0
-            else 0
-        )
-        recall[i] = (
-            true_positive / (true_positive + false_negative)
-            if (true_positive + false_negative) != 0
-            else 0
-        )
-        f1_score[i] = (
-            2 * (precision[i] * recall[i]) / (precision[i] + recall[i])
-            if (precision[i] + recall[i]) != 0
-            else 0
-        )
-
-    return precision, recall, f1_score
 
 
 def count_parameters(model: nn.Module) -> int:
@@ -106,39 +71,6 @@ def keep_model_copies_every(
         get_path(max(0, epoch - 1)).unlink(missing_ok=True)
 
 
-def process_confusion_matrices_if_any_and_compute_classification_metrics(
-    logs: Logs,
-) -> None:
-    cm = [x.pop("confusion_matrix") for x in logs if "confusion_matrix" in x]
-    if len(cm) > 0:
-        confusion_matrices = {
-            k: sum([d[k] for d in cm]) for k in cm[0]
-        }  # accumulate confusion matrices
-        metrics = {}
-        for key, confusion_matrix in confusion_matrices.items():
-            precision, recall, f1_score = compute_classification_metrics(
-                confusion_matrix
-            )
-            metrics.update(
-                {
-                    **{
-                        f"classification_metrics/{key}_precision_class_{i}": v
-                        for i, v in enumerate(precision)
-                    },
-                    **{
-                        f"classification_metrics/{key}_recall_class_{i}": v
-                        for i, v in enumerate(recall)
-                    },
-                    **{
-                        f"classification_metrics/{key}_f1_score_class_{i}": v
-                        for i, v in enumerate(f1_score)
-                    },
-                }
-            )
-
-        logs.append(metrics)  # Append the obtained metrics to logs (in place)
-
-
 def save_with_backup(obj: Any, path: Path):
     bk = path.with_suffix(".bk")
     if path.is_file():
@@ -154,9 +86,8 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
 
 
-def wandb_log(logs: Logs, epoch: int):
-    for d in logs:
-        wandb.log({"epoch": epoch, **d})
+def wandb_log(log: dict[str, float], epoch: int, global_step: int) -> None:
+    wandb.log({"epoch": epoch, **log}, step=global_step)
 
 
 def download_model_weights(url: str, save_path: str, device: torch.device):
