@@ -11,10 +11,9 @@
 #SBATCH --output=slurm_outs/%j.out
 
 module purge;
-module load anaconda3/2020.07;
+module load anaconda3/2024.02;
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK;
-source /share/apps/anaconda3/2020.07/etc/profile.d/conda.sh;
+source /share/apps/anaconda3/2024.02/etc/profile.d/conda.sh;
 conda activate ./penv;
-export PATH=./penv/bin:$PATH;
 
 python scripts/preprocess_data_with_vae.py --dataset_type test

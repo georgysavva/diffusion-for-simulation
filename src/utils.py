@@ -154,18 +154,6 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
 
 
-def try_until_no_except(func: Callable) -> None:
-    while True:
-        try:
-            func()
-        except KeyboardInterrupt:
-            break
-        except Exception:
-            continue
-        else:
-            break
-
-
 def wandb_log(logs: Logs, epoch: int):
     for d in logs:
         wandb.log({"epoch": epoch, **d})

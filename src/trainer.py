@@ -22,7 +22,6 @@ from utils import (
     keep_model_copies_every,
     process_confusion_matrices_if_any_and_compute_classification_metrics,
     set_seed,
-    try_until_no_except,
     wandb_log,
 )
 
@@ -51,14 +50,13 @@ class Trainer:
 
         # Init wandb
         if self._rank == 0:
-            try_until_no_except(
-                partial(
-                    wandb.init,
-                    config=OmegaConf.to_container(cfg, resolve=True),
-                    reinit=True,
-                    **cfg.wandb,
-                )
+
+            wandb.init(
+                config=OmegaConf.to_container(cfg, resolve=True),
+                reinit=True,
+                **cfg.wandb,
             )
+
         # Checkpointing
         self._path_ckpt_dir = Path(cfg.checkpointing.save_path) / wandb.run.name
         self._keep_model_copies = partial(
