@@ -45,6 +45,6 @@ training:
 
 evaluation:
   should: True
-  every: 5
+  every: 20
 
 
