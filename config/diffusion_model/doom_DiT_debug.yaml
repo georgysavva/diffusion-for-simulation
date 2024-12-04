@@ -1,10 +1,10 @@
 model:
   _target_: models.DiT.DiT
   num_actions: ...
-  num_conditioning_steps: 8
+  num_conditioning_steps: 4
   input_size: 32
   patch_size: 8
-  in_channels: 3
+  in_channels: 4
   hidden_size: 32
   depth: 6
   num_heads: 4
@@ -13,8 +13,9 @@ model:
 
     
 training:
-  batch_size: 5
-  steps_per_epoch: 400
+  batch_size: 8
+  steps_per_epoch: 5
+  num_epochs: 1600
   lr_warmup_steps: 100
   
 
