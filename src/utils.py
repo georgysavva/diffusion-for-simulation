@@ -10,10 +10,30 @@ import numpy as np
 import torch
 import torch.nn as nn
 import wandb
+from einops import rearrange
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LambdaLR
+from torchvision import transforms
 from torchvision.datasets.utils import download_url
+
+
+def transform_image_obs(obs, resolution):
+    obs = rearrange(obs, "n h w c-> n c h w")
+    obs = obs.float() / 255.0
+    size = min(obs.shape[-2], obs.shape[-2])  # Crop to square
+    obs = transforms.functional.center_crop(obs, size)
+    transform = transforms.Compose(
+        [
+            transforms.Resize(
+                resolution, interpolation=transforms.InterpolationMode.BILINEAR
+            ),
+            transforms.Normalize([0.5], [0.5]),
+        ]
+    )
+
+    obs = transform(obs)
+    return obs
 
 
 def build_ddp_wrapper(**modules_dict: Dict[str, nn.Module]) -> Namespace:
