@@ -16,4 +16,4 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK;
 source /share/apps/anaconda3/2024.02/etc/profile.d/conda.sh;
 conda activate ./penv;
 
-python src/main.py diffusion_model=doom_DiT_overfit env=doom_debug
+python src/main.py env=doom_debug
