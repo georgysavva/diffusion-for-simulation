@@ -151,7 +151,8 @@ class Trainer:
         self.global_step = 0
 
         self.diffusion = create_diffusion(
-            timestep_respacing=""
+            timestep_respacing="",
+            learn_sigma=False,
         )  # default: 1000 steps, linear noise schedule
 
     def run(self) -> None:
