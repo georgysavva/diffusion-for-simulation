@@ -10,7 +10,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from src.data.dataset import Dataset
-from src.utils import transform_image_obs
+from src.utils import normalize_img, prepare_image_obs
 
 
 # Main function
@@ -24,7 +24,8 @@ def preprocess_data_with_vae(dataset, save_path, vae, resolution, batch_size):
         latents = []
         for i in range(0, len(obs), batch_size):
             batch_obs = obs[i : i + batch_size].to(vae.device)
-            batch_obs = transform_image_obs(batch_obs, resolution)
+            batch_obs = prepare_image_obs(batch_obs, resolution)
+            batch_obs = normalize_img(batch_obs)
             latent = vae.encode(batch_obs).latent_dist.sample()
             latents.append(latent)
         latents = torch.cat(latents, dim=0)
