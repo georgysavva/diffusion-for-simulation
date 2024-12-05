@@ -85,7 +85,10 @@ if __name__ == "__main__":
         default="src/vae/trained_vae_decoder.pth",
     )
     parser.add_argument(
-        "--episode_path", type=str, required=True, help="Path to the episode data."
+        "--episode_path",
+        type=str,
+        help="Path to the episode data.",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_11.pt",
     )
     parser.add_argument(
         "--num_seed_steps", type=int, help="Number of seed steps.", default=10

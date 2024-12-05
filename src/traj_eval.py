@@ -2,8 +2,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from data.episode import Episode
-from diffusion.respace import SpacedDiffusion
+from src.data.episode import Episode
+from src.diffusion.respace import SpacedDiffusion
 from src.utils import denormalize_img, normalize_img, prepare_image_obs, to_numpy_video
 
 
