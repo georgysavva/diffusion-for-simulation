@@ -132,7 +132,7 @@ def download_model_weights(url: str, save_path: str, device: torch.device):
     if not os.path.isfile(local_path):
         os.makedirs(save_path, exist_ok=True)
         download_url(url, save_path, filename=model_name)
-    model = torch.load(local_path, map_location=device)
+    model = torch.load(local_path, map_location=device, weights_only=True)
     return model
 
 

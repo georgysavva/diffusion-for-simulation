@@ -4,10 +4,6 @@ defaults:
   - diffusion_model: doom_DiT
 
 
-hydra:
-  job:
-    chdir: True
-
 wandb:
   project: diffusion-for-simulation-doom
   entity: diffusion-for-simulation
@@ -30,7 +26,7 @@ common:
   project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation
 
 checkpointing:
-  save_path: ${common.project_storage_base_path}/checkpoints/
+  save_path: ${common.project_storage_base_path}/runs/
   save_diffusion_model_every: 5
   num_to_keep: 11  # number of checkpoints to keep, use null to disable
 

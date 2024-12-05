@@ -104,6 +104,7 @@ class Trainer:
             sd = torch.load(
                 Path(cfg.initialization.path_to_ckp),
                 map_location=self._device,
+                weights_only=True,
             )
             self.diffusion_model.load_state_dict(sd)
 
