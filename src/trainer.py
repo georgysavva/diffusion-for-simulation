@@ -11,9 +11,14 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
-from data import BatchSampler, Dataset, TestDatasetTraverser, collate_segments_to_batch
-from diffusion import create_diffusion
-from utils import (
+from src.data import (
+    BatchSampler,
+    Dataset,
+    TestDatasetTraverser,
+    collate_segments_to_batch,
+)
+from src.diffusion import create_diffusion
+from src.utils import (
     build_ddp_wrapper,
     count_parameters,
     download_model_weights,

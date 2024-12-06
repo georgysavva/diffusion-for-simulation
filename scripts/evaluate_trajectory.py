@@ -16,7 +16,7 @@ from src.utils import prepare_image_obs, save_np_video, to_numpy_video
 
 def main(args):
     device = torch.device(args.device)
-    diffusion = create_diffusion(str(args.num_sampling_steps))
+    diffusion = create_diffusion(str(args.num_sampling_steps), learn_sigma=False)
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(device)
     vae.decoder.load_state_dict(
         torch.load(args.vae_decoder_path, weights_only=True, map_location=device)
@@ -29,7 +29,7 @@ def main(args):
     ).to(device)
     diffusion_model.load_state_dict(
         torch.load(
-            run_dir / "diffusion_model_version" / args.model_version,
+            run_dir / "diffusion_model_versions" / args.model_version,
             map_location=device,
             weights_only=True,
         )
@@ -37,7 +37,6 @@ def main(args):
 
     episode = Episode.load(args.episode_path)
     episode_name = os.path.splitext(os.path.basename(args.episode_path))[0]
-    episode = episode.to(device)
     episode.obs = prepare_image_obs(episode.obs, args.img_resolution)
 
     evaluator = TrajectoryEvaluator(
@@ -45,6 +44,7 @@ def main(args):
         vae=vae,
         num_seed_steps=args.num_seed_steps,
         num_conditioning_steps=args.num_conditioning_steps,
+        sampling_algorithm=args.sampling_algorithm,
         device=device,
     )
     output_dir = run_dir / "trajectory_evaluation" / args.model_version / episode_name
@@ -54,11 +54,12 @@ def main(args):
             diffusion_model, episode, auto_regressive
         )
         auto_regressive_tag = (
-            "auto_regressive" if auto_regressive else "non_auto_regressive"
+            "auto_regressive" if auto_regressive else "teacher_forcing"
         )
         save_np_video(
             generated_trajectory,
-            output_dir / f"generated_{auto_regressive_tag}.mp4",
+            output_dir
+            / f"generated_{auto_regressive_tag}_{args.sampling_algorithm}.mp4",
             args.fps,
         )
     ground_truth_trajectory = to_numpy_video(episode.obs)
@@ -94,10 +95,10 @@ if __name__ == "__main__":
         "--num_seed_steps", type=int, help="Number of seed steps.", default=10
     )
     parser.add_argument(
-        "--num_diffusion_steps",
+        "--num_sampling_steps",
         type=int,
         help="Number of diffusion sampling steps.",
-        default=250
+        default=8,
     )
     parser.add_argument(
         "--num_conditioning_steps",
@@ -113,6 +114,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--device", type=str, default="cuda", help="Device to run the evaluation on."
+    )
+    parser.add_argument(
+        "--sampling_algorithm",
+        type=str,
+        choices=["DDIM", "DDPM"],
+        default="DDPM",
+        help="Sampling algorithm to use for diffusion.",
     )
     args = parser.parse_args()
     main(args)
