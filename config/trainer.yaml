@@ -4,14 +4,10 @@ defaults:
   - diffusion_model: doom_DiT
 
 
-hydra:
-  job:
-    chdir: True
-
 wandb:
   project: diffusion-for-simulation-doom
   entity: diffusion-for-simulation
-  name: null
+  name: ${common.run_name}
   group: null
   tags: null
   notes: null
@@ -24,13 +20,15 @@ pretrained_weights: null
 initialization:
   path_to_ckpt: null
 
+experiment_name: "" # Should be set through CLI
 common:
   devices: 0  # int, list of int, cpu, or all 
   seed: null
   project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation
+  run_name: ${now:%Y.%m.%d}T${now:%H-%M}_${experiment_name}
+  run_dir: ${common.project_storage_base_path}/runs/${common.run_name}
 
 checkpointing:
-  save_path: ${common.project_storage_base_path}/checkpoints/
   save_diffusion_model_every: 5
   num_to_keep: 11  # number of checkpoints to keep, use null to disable
 
@@ -47,4 +45,6 @@ evaluation:
   should: True
   every: 5
 
-
+hydra:
+  run:
+    dir: ${common.run_dir}

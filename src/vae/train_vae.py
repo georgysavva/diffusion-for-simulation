@@ -1,29 +1,31 @@
 # python src/vae/train_vae.py --tag test --learning_rate 1e-4 --max_train_steps 100 --checkpointing_steps 25 --wandb
 
-import random
-import logging
 import argparse
+import logging
 import math
 import os
-from tqdm import tqdm
+import random
 
+import datasets
+import diffusers
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
-from torch.utils.data import Dataset, DataLoader, random_split
-from torchvision import transforms
-
-from accelerate import Accelerator
-from accelerate.logging import get_logger
-from accelerate.utils import set_seed, ProjectConfiguration
-import diffusers
-from diffusers import AutoencoderKL
-from diffusers.optimization import get_scheduler
-import datasets
 import transformers
 
 # wandb
 import wandb
+from accelerate import Accelerator
+from accelerate.logging import get_logger
+from accelerate.utils import ProjectConfiguration, set_seed
+from diffusers import AutoencoderKL
+from diffusers.optimization import get_scheduler
+from torch.utils.data import DataLoader, Dataset, random_split
+from torchvision import transforms
+from tqdm import tqdm
+
+from src.utils import normalize_img, prepare_image_obs
+
 wandb.login(key='faf21d9ff65ee150697c7e96f070616f6b662134', relogin=True)
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
@@ -91,10 +93,7 @@ def set_up_main_process_logger(accelerator, logger):
 class VAEDataset(Dataset):
     def __init__(self, data_dir, resolution):
         self.data_dir = data_dir
-        self.transform = transforms.Compose([
-            transforms.Resize(resolution, interpolation=transforms.InterpolationMode.BILINEAR),
-            transforms.Normalize([0.5], [0.5]),
-        ])
+        self.resolution = resolution
         self.files = [os.path.join(data_dir, f) for f in sorted(os.listdir(data_dir)) if f.endswith(".pt")]
 
     def __len__(self):
@@ -104,10 +103,8 @@ class VAEDataset(Dataset):
         data = torch.load(self.files[idx], weights_only=True)  # Load 4D tensor: (N, H, W, C)
         # Randomly select one image
         img = data[torch.randint(0, data.shape[0], (1,)).item()]  # Select one image (H, W, C)
-        img = img.permute(2, 0, 1).float() / 255.0  # Convert to CHW and normalize to [0, 1]
-        size = min(img.shape[1], img.shape[2])  # Crop to square
-        img = transforms.functional.center_crop(img, size)
-        img = self.transform(img)
+        img = prepare_image_obs(img, self.resolution)
+        img = normalize_img(img)
         return img
 
 

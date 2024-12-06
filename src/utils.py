@@ -6,14 +6,47 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
 import wandb
+from einops import rearrange
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LambdaLR
+from torchvision import transforms
 from torchvision.datasets.utils import download_url
+
+
+def prepare_image_obs(obs, resolution):
+    obs = rearrange(obs, "n h w c-> n c h w")
+    size = min(obs.shape[-2], obs.shape[-2])  # Crop to square
+    obs = transforms.functional.center_crop(obs, size)
+    transform = transforms.Resize(
+        resolution, interpolation=transforms.InterpolationMode.BILINEAR
+    )
+
+    obs = transform(obs)
+    return obs
+
+
+def normalize_img(img: torch.Tensor) -> torch.Tensor:
+    img = img.float() / 255.0
+    transform = transforms.Normalize([0.5], [0.5])
+    img = transform(img)
+    return img
+
+
+def to_numpy_video(imgs: torch.Tensor) -> np.ndarray:
+    imgs = rearrange(imgs, "n c h w-> n h w c")
+    return imgs.cpu().numpy()
+
+
+def denormalize_img(img: torch.Tensor) -> torch.Tensor:
+    img = img * 0.5 + 0.5
+    img = (img * 255.0).clamp(0, 255).byte()
+    return img
 
 
 def build_ddp_wrapper(**modules_dict: Dict[str, nn.Module]) -> Namespace:
@@ -99,5 +132,24 @@ def download_model_weights(url: str, save_path: str, device: torch.device):
     if not os.path.isfile(local_path):
         os.makedirs(save_path, exist_ok=True)
         download_url(url, save_path, filename=model_name)
-    model = torch.load(local_path, map_location=device)
+    model = torch.load(local_path, map_location=device, weights_only=True)
     return model
+
+
+def save_np_video(frames: np.ndarray, path: str, fps: int) -> None:
+    """
+    Saves a numpy array of frames to disk as a playable video.
+
+    Args:
+        frames (np.ndarray): Array of frames with shape (num_frames, height, width, channels).
+        path (str): Path to save the video file.
+        fps (int): Frames per second for the video.
+    """
+    height, width = frames.shape[1], frames.shape[2]
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # Codec for .mp4 files
+    video_writer = cv2.VideoWriter(path, fourcc, fps, (width, height))
+
+    for frame in frames:
+        video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+    video_writer.release()

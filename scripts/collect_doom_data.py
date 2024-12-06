@@ -4,10 +4,10 @@ import os
 
 import cv2
 import gymnasium as gym
+import imageio
 import torch
 from tqdm import tqdm
 from vizdoom import gymnasium_wrapper  # to register envs
-import imageio
 
 
 def collect_observations_only(env, num_episodes, save_path, skip_frames):
@@ -64,7 +64,7 @@ def collect_episodes(env, num_episodes, save_path):
         out = cv2.VideoWriter(
             video_filename,
             fourcc,
-            60,
+            35,
             (observation["screen"].shape[1], observation["screen"].shape[0]),
         )
         while not done:

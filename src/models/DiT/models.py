@@ -359,6 +359,10 @@ class DiT(nn.Module):
         noised_obs = self.unpatchify(noised_obs)  # (N, out_channels, H, W)
         return noised_obs
 
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
 
 #################################################################################
 #                   Sine/Cosine Positional Embedding Functions                  #

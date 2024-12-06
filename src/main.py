@@ -8,7 +8,7 @@ import torch.multiprocessing as mp
 from omegaconf import DictConfig, OmegaConf
 from torch.distributed import destroy_process_group, init_process_group
 
-from trainer import Trainer
+from src.trainer import Trainer
 
 OmegaConf.register_new_resolver("eval", eval)
 

@@ -1,1 +1,1 @@
-from models.DiT.models import DiT
+from src.models.DiT.models import DiT
