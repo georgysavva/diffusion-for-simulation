@@ -5,12 +5,12 @@ from pathlib import Path
 
 import torch
 import torch.distributed as dist
-import wandb
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
+import wandb
 from src.data import (
     BatchSampler,
     Dataset,
@@ -53,7 +53,7 @@ class Trainer:
 
         # Init wandb
         if self._rank == 0:
-
+            assert cfg.experiment_name, "experiment_name must be provided in hydra"
             wandb.init(
                 config=OmegaConf.to_container(cfg, resolve=True),
                 reinit=True,
@@ -61,17 +61,13 @@ class Trainer:
             )
 
         # Checkpointing
-        self._path_ckpt_dir = Path(cfg.checkpointing.save_path) / wandb.run.name
+
         self._keep_model_copies = partial(
             keep_model_copies_every,
             every=cfg.checkpointing.save_diffusion_model_every,
-            path_ckpt_dir=self._path_ckpt_dir,
+            path_ckpt_dir=Path(cfg.common.run_dir),
             num_to_keep=cfg.checkpointing.num_to_keep,
         )
-
-        # First time, init files hierarchy
-        if self._rank == 0:
-            self._path_ckpt_dir.mkdir(exist_ok=False, parents=False)
 
         num_workers = cfg.training.num_workers_data_loaders
         p = Path(cfg.static_dataset.path)
