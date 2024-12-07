@@ -1,5 +1,5 @@
 model:
-  _target_: models.DiT.DiT
+  _target_: src.models.DiT.DiT
   num_actions: ...
   num_conditioning_steps: 8
   input_size: 32
