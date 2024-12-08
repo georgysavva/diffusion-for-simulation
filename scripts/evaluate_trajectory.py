@@ -43,7 +43,7 @@ def main(args):
         diffusion=diffusion,
         vae=vae,
         num_seed_steps=args.num_seed_steps,
-        num_conditioning_steps=args.num_conditioning_steps,
+        num_conditioning_steps=run_config.diffusion_model.model.num_conditioning_steps,
         sampling_algorithm=args.sampling_algorithm,
         device=device,
     )
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         "--vae_decoder_path",
         type=str,
         help="Path to the VAE model.",
-        default="src/vae/trained_vae_decoder.pth",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth",
     )
     parser.add_argument(
         "--episode_path",
@@ -92,19 +92,13 @@ if __name__ == "__main__":
         default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_11.pt",
     )
     parser.add_argument(
-        "--num_seed_steps", type=int, help="Number of seed steps.", default=10
+        "--num_seed_steps", type=int, help="Number of seed steps.", default=8
     )
     parser.add_argument(
         "--num_sampling_steps",
         type=int,
         help="Number of diffusion sampling steps.",
         default=8,
-    )
-    parser.add_argument(
-        "--num_conditioning_steps",
-        type=int,
-        help="Number of conditioning steps.",
-        default = 300
     )
     parser.add_argument(
         "--fps", type=int, help="Trajectory frames per second.", default=35

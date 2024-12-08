@@ -28,8 +28,12 @@ class TrajectoryEvaluator:
             self._sampling_function = diffusion.ddim_sample_loop
         else:
             raise ValueError(f"Unknown sampling algorithm: {sampling_algorithm}")
+        assert (
+            num_conditioning_steps >= num_seed_steps
+        ), "Number of conditioning steps must be greater than or equal to the number of seed steps."
         self._device = device
 
+    @torch.no_grad()
     def evaluate_episode(
         self, model, episode: Episode, auto_regressive: bool = False
     ) -> np.ndarray:
