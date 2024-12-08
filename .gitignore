@@ -25,6 +25,6 @@ depre/
 *.jpg
 *.png
 *.egg-info
-
+sbatch_files/
 # georgy
 .local/
