@@ -230,7 +230,6 @@ class Trainer:
         self.diffusion_model.eval()
         model = self.diffusion_model
         data_loader = self._data_loader_test
-        model.eval()
         eval_loss = 0.0
         for batch in tqdm(data_loader, desc="Evaluating"):
             batch = batch.to(self._device)
