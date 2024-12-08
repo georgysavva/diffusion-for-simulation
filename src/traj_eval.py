@@ -16,6 +16,7 @@ class TrajectoryEvaluator:
         num_seed_steps: int,
         num_conditioning_steps: int,
         sampling_algorithm: str,
+        vae_batch_size: int,
         device: torch.device,
     ):
         self._diffusion = diffusion
@@ -31,6 +32,7 @@ class TrajectoryEvaluator:
         assert (
             num_conditioning_steps >= num_seed_steps
         ), "Number of conditioning steps must be greater than or equal to the number of seed steps."
+        self._vae_batch_size = vae_batch_size
         self._device = device
 
     @torch.no_grad()
@@ -39,28 +41,25 @@ class TrajectoryEvaluator:
     ) -> np.ndarray:
         model.eval()
         self._vae.eval()
-        obs_img = episode.obs.cpu()
+        obs_img = episode.obs.to(self._device)
         act = episode.act.to(self._device)
         obs_img_norm = normalize_img(obs_img)
-        seed_obs = (
-            self._vae.encode(obs_img_norm[: self._num_seed_steps].to(self._device))
-            .latent_dist.sample()
-            .mul_(0.18215)
-        )
-        latent_shape = seed_obs.shape[-3:]
+        obs_latent = self._run_encode_on_episode(obs_img_norm)
+        latent_shape = obs_latent.shape[-3:]
         prev_obs = torch.zeros(
             self._num_conditioning_steps, *latent_shape, device=self._device
         )
         prev_act = torch.zeros(
             self._num_conditioning_steps, device=self._device, dtype=torch.int32
         )
-        prev_obs[-self._num_seed_steps :] = seed_obs
+        prev_obs[-self._num_seed_steps :] = obs_latent[: self._num_seed_steps]
         prev_act[-self._num_seed_steps :] = act[: self._num_seed_steps]
 
-        generated_trajectory_img = torch.empty_like(obs_img)
-        generated_trajectory_img[: self._num_seed_steps] = obs_img[
-            : self._num_seed_steps
-        ]
+        generated_trajectory_latent = torch.empty(
+            obs_latent.size(0) - self._num_seed_steps,
+            *latent_shape,
+            device=self._device,
+        )
         for step in tqdm(range(self._num_seed_steps, len(episode)), desc="Generating"):
             z = torch.randn(1, *latent_shape, device=self._device)
             model_kwargs = dict(
@@ -81,21 +80,46 @@ class TrajectoryEvaluator:
             if auto_regressive:
                 prev_obs[-1] = generated_obs
             else:
-                prev_obs[-1] = (
-                    self._vae.encode(obs_img_norm[step].unsqueeze(0).to(self._device))
-                    .latent_dist.sample()
-                    .mul_(0.18215)
-                    .squeeze(0)
-                )
-            generated_trajectory_img[step] = (
-                denormalize_img(
-                    self._vae.decode(generated_obs.unsqueeze(0) / 0.18215).sample.clamp(
-                        -1, 1
-                    )
-                )
-                .squeeze(0)
-                .cpu()
-            )
+                prev_obs[-1] = obs_latent[step]
+            generated_trajectory_latent[step - self._num_seed_steps] = generated_obs
+        generated_trajectory_img_norm = self._run_decode_on_episode(
+            generated_trajectory_latent
+        )
+        generated_trajectory_img = denormalize_img(generated_trajectory_img_norm)
+        full_trajectory_img = torch.cat(
+            [obs_img[: self._num_seed_steps], generated_trajectory_img], dim=0
+        )
 
-        generated_trajectory_img_np = to_numpy_video(generated_trajectory_img)
+        generated_trajectory_img_np = to_numpy_video(full_trajectory_img)
         return generated_trajectory_img_np
+
+    @torch.no_grad()
+    def run_vae_on_episode(
+        self,
+        episode: Episode,
+    ) -> np.ndarray:
+        self._vae.eval()
+        obs_img = episode.obs.to(self._device)
+        obs_img_norm = normalize_img(obs_img)
+        obs_latent = self._run_encode_on_episode(obs_img_norm)
+        obs_img_norm = self._run_decode_on_episode(obs_latent)
+        obs_img = denormalize_img(obs_img_norm)
+        return to_numpy_video(obs_img)
+
+    def _run_encode_on_episode(self, obs_img_norm) -> torch.Tensor:
+        obs_latent = []
+        for i in range(0, len(obs_img_norm), self._vae_batch_size):
+            batch = obs_img_norm[i : i + self._vae_batch_size]
+            obs_latent.append(
+                self._vae.encode(batch).latent_dist.sample().mul_(0.18215)
+            )
+        obs_latent = torch.cat(obs_latent, dim=0)
+        return obs_latent
+
+    def _run_decode_on_episode(self, obs_latent) -> torch.Tensor:
+        obs_img_norm = []
+        for i in range(0, len(obs_latent), self._vae_batch_size):
+            batch = obs_latent[i : i + self._vae_batch_size]
+            obs_img_norm.append(self._vae.decode(batch / 0.18215).sample.clamp(-1, 1))
+        obs_img_norm = torch.cat(obs_img_norm, dim=0)
+        return obs_img_norm

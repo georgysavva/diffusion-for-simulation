@@ -45,11 +45,12 @@ def main(args):
         num_seed_steps=args.num_seed_steps,
         num_conditioning_steps=run_config.diffusion_model.model.num_conditioning_steps,
         sampling_algorithm=args.sampling_algorithm,
+        vae_batch_size=args.vae_batch_size,
         device=device,
     )
     output_dir = run_dir / "trajectory_evaluation" / args.model_version / episode_name
     output_dir.mkdir(parents=True, exist_ok=True)
-    for auto_regressive in [False, True]:
+    for auto_regressive in [False]:
         generated_trajectory = evaluator.evaluate_episode(
             diffusion_model, episode, auto_regressive
         )
@@ -62,12 +63,15 @@ def main(args):
             / f"generated_{auto_regressive_tag}_{args.sampling_algorithm}.mp4",
             args.fps,
         )
+
     ground_truth_trajectory = to_numpy_video(episode.obs)
     save_np_video(
         ground_truth_trajectory,
         output_dir / f"ground_truth.mp4",
         args.fps,
     )
+    vae_video = evaluator.run_vae_on_episode(episode)
+    save_np_video(vae_video, output_dir / f"vae_reconstruction.mp4", args.fps)
 
 
 if __name__ == "__main__":
@@ -108,6 +112,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--device", type=str, default="cuda", help="Device to run the evaluation on."
+    )
+    parser.add_argument(
+        "--vae_batch_size",
+        type=int,
+        default=32,
+        help="Batch size for VAE encode and decode",
     )
     parser.add_argument(
         "--sampling_algorithm",
