@@ -195,8 +195,10 @@ class VDA(nn.Module):
         nn.init.constant_(self.x_embedder.proj.bias, 0)
 
         # Initialize embedding tables:
-        nn.init.normal_(self.frame_embedder.embedding_table.weight, std=0.02)
-        nn.init.normal_(self.action_embedder.embedding_table.weight, std=0.02)
+        if self.frame_embedder is not None:
+            nn.init.normal_(self.frame_embedder.embedding_table.weight, std=0.02)
+        if self.action_embedder is not None:
+            nn.init.normal_(self.action_embedder.embedding_table.weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)

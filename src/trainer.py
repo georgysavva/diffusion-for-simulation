@@ -186,14 +186,14 @@ class Trainer:
                 self.test_diffusion_model()
 
             # Inference
-            should_inference = (
-                self._rank == 0
-                and self._cfg.inference.should
-                and (self.epoch % self._cfg.inference.every == 0)
-            )
+            # should_inference = (
+            #     self._rank == 0
+            #     and self._cfg.inference.should
+            #     and (self.epoch % self._cfg.inference.every == 0)
+            # )
 
-            if should_inference:
-                self.inference_diffusion_model()
+            # if should_inference:
+            #     self.inference_diffusion_model()
 
             # Logging
             if self._rank == 0:
@@ -259,7 +259,6 @@ class Trainer:
     @torch.no_grad()
     def inference_diffusion_model(self):
         self.diffusion_model.eval()
-        breakpoint()
         model = self.diffusion_model
         data_loader = self._data_loader_test
         eval_loss = 0.0
