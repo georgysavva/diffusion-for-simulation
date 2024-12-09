@@ -1,3 +1,4 @@
+import os
 import shutil
 import time
 from functools import partial
@@ -41,9 +42,10 @@ class Trainer:
         set_seed(torch.seed() % 10**9)
 
         # Device
-        self._device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu", self._rank
-        )
+        if torch.cuda.is_available():
+            self._device = torch.device("cuda", self._rank)
+        else:
+            self._device = torch.device("cpu")
         print(f"Starting on {self._device}")
         self._use_cuda = self._device.type == "cuda"
         if self._use_cuda:
@@ -80,9 +82,7 @@ class Trainer:
         # Create models
         if self._rank == 0:
             print("Instantiating model")
-        self.diffusion_model = instantiate(
-            cfg.diffusion_model.model, num_actions=cfg.env.num_actions
-        ).to(self._device)
+        self.diffusion_model = instantiate(cfg.diffusion_model.model).to(self._device)
         if self._rank == 0:
             print(f"{count_parameters(self.diffusion_model)} parameters")
         self._diffusion_model = (
@@ -91,12 +91,15 @@ class Trainer:
             else self.diffusion_model
         )
         assert (
-            cfg.pretrained_weights is None or cfg.initialization.path_to_ckpt is None
-        ), "Only one of pretrained_weights or path_to_ckpt should be provided"
-        if cfg.pretrained_weights is not None:
+            cfg.pretrained_weights_url is None
+            or cfg.initialization.path_to_ckpt is None
+        ), "Only one of pretrained_weights_url or path_to_ckpt should be provided"
+        if cfg.pretrained_weights_url is not None:
             weights = download_model_weights(
-                cfg.pretrained_weights.url,
-                cfg.pretrained_weights.save_path,
+                cfg.pretrained_weights_url,
+                os.path.join(
+                    cfg.common.project_storage_base_path, "pretrained_weights"
+                ),
                 self._device,
             )
             self.diffusion_model.load_pretrained_weights(weights)
@@ -154,7 +157,7 @@ class Trainer:
 
         self.diffusion = create_diffusion(
             timestep_respacing="",
-            learn_sigma=False,
+            learn_sigma=cfg.diffusion.learn_sigma,
         )  # default: 1000 steps, linear noise schedule
 
     def run(self) -> None:

@@ -19,7 +19,6 @@ def main(args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device(args.device)
-    diffusion = create_diffusion(str(args.num_sampling_steps), learn_sigma=False)
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(device)
     vae.decoder.load_state_dict(
         torch.load(args.vae_decoder_path, weights_only=True, map_location=device)
@@ -27,9 +26,10 @@ def main(args):
     run_dir = Path(args.run_dir)
     run_config_path = run_dir / ".hydra" / "config.yaml"
     run_config = OmegaConf.load(run_config_path)
-    diffusion_model = instantiate(
-        run_config.diffusion_model.model, num_actions=run_config.env.num_actions
-    ).to(device)
+    diffusion = create_diffusion(
+        str(args.num_sampling_steps), learn_sigma=run_config.diffusion.learn_sigma
+    )
+    diffusion_model = instantiate(run_config.diffusion_model.model).to(device)
     diffusion_model.load_state_dict(
         torch.load(
             run_dir / "diffusion_model_versions" / args.model_version,

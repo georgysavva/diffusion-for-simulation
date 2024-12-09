@@ -12,17 +12,16 @@ wandb:
   tags: null
   notes: null
 
-# pretrained_weights:
-#   url: https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-256x256.pt
-#   save_path: ${common.project_storage_base_path}/pretrained_weights/
-pretrained_weights: null
+diffusion:
+  learn_sigma: False
+
+pretrained_weights_url: null
 
 initialization:
   path_to_ckpt: null
 
 experiment_name: "" # Should be set through CLI
 common:
-  devices: 0  # int, list of int, cpu, or all 
   seed: null
   project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation
   run_name: ${now:%Y.%m.%d}T${now:%H-%M}_${experiment_name}

@@ -240,11 +240,11 @@ class DiT(nn.Module):
         num_heads,
         mlp_ratio,
         time_frequency_embedding_size,
-        enable_conditioning,
+        learn_sigma,
     ):
         super().__init__()
         self.in_channels = in_channels
-        self.out_channels = in_channels
+        self.out_channels = in_channels * 2 if learn_sigma else in_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
 
@@ -252,8 +252,8 @@ class DiT(nn.Module):
             input_size, patch_size, in_channels, hidden_size, bias=True
         )
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
-        self.enable_conditioning = enable_conditioning
-        if enable_conditioning:
+        self.enable_conditioning = num_conditioning_steps > 0
+        if self.enable_conditioning:
             self.previous_obs_embedder = PreviousObservationEmbedder(
                 num_conditioning_steps, input_size, patch_size, in_channels, hidden_size
             )
@@ -271,7 +271,7 @@ class DiT(nn.Module):
                     hidden_size,
                     num_heads,
                     mlp_ratio=mlp_ratio,
-                    enable_conditioning=enable_conditioning,
+                    enable_conditioning=self.enable_conditioning,
                 )
                 for _ in range(depth)
             ]
@@ -280,6 +280,14 @@ class DiT(nn.Module):
         self.initialize_weights()
 
     def load_pretrained_weights(self, weights):
+        key_mapping = {
+            "pos_embed": "noised_obs_pos_embed",
+            "x_embedder.proj.weight": "noised_obs_embedder.proj.weight",
+            "x_embedder.proj.bias": "noised_obs_embedder.proj.bias",
+        }
+        for map_from, map_to in key_mapping.items():
+            if map_from in weights:
+                weights[map_to] = weights.pop(map_from)
         missing_keys, unexpected_keys = self.load_state_dict(
             weights, strict=False
         )  # This doesn't work yet. Fix the layers.

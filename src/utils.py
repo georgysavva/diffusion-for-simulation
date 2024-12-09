@@ -10,13 +10,14 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
-import wandb
 from einops import rearrange
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LambdaLR
 from torchvision import transforms
 from torchvision.datasets.utils import download_url
+
+import wandb
 
 
 def prepare_image_obs(obs, resolution):
