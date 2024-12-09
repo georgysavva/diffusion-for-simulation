@@ -13,7 +13,7 @@ from src.trainer import Trainer
 OmegaConf.register_new_resolver("eval", eval)
 
 
-@hydra.main(config_path="../config", config_name="trainer", version_base="1.3")
+@hydra.main(config_path="../config", config_name="trainer_VDA", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     setup_visible_cuda_devices(cfg.common.devices)
     world_size = torch.cuda.device_count()

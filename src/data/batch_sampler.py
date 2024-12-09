@@ -16,6 +16,7 @@ class BatchSampler(torch.utils.data.Sampler):
         world_size: int,
         batch_size: int,
         seq_length: int,
+        guarantee_full_seqs: bool,
     ) -> None:
         super().__init__(dataset)
         self.dataset = dataset
@@ -23,6 +24,7 @@ class BatchSampler(torch.utils.data.Sampler):
         self.world_size = world_size
         self.batch_size = batch_size
         self.seq_length = seq_length
+        self.guarantee_full_seqs = guarantee_full_seqs
 
     def __len__(self):
         raise NotImplementedError
@@ -38,12 +40,15 @@ class BatchSampler(torch.utils.data.Sampler):
         episode_ids = np.random.choice(
             episodes_partition, size=self.batch_size, replace=True
         )
-        timesteps = np.random.randint(low=0, high=self.dataset.lengths[episode_ids])
-
-        stops = np.minimum(
-            self.dataset.lengths[episode_ids],
-            timesteps + 1 + np.random.randint(0, self.seq_length, len(timesteps)),
-        )
-        starts = stops - self.seq_length
+        if self.guarantee_full_seqs:
+            starts = np.random.randint(low=0, high=self.dataset.lengths[episode_ids] - self.seq_length)
+            stops = starts + self.seq_length
+        else:
+            timesteps = np.random.randint(low=0, high=self.dataset.lengths[episode_ids])
+            stops = np.minimum(
+                self.dataset.lengths[episode_ids],
+                timesteps + 1 + np.random.randint(0, self.seq_length, len(timesteps)),
+            )
+            starts = stops - self.seq_length
 
         return [SegmentId(*x) for x in zip(episode_ids, starts, stops)]

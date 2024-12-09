@@ -27,6 +27,9 @@ from src.utils import (
     set_seed,
     wandb_log,
 )
+from src.models.DiT import DiT
+from src.models.VDA import VDA
+
 
 
 class Trainer:
@@ -132,6 +135,7 @@ class Trainer:
             self._world_size,
             c.batch_size,
             seq_length,
+            guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
         )
 
         self._data_loader_train = DataLoader(
@@ -180,6 +184,16 @@ class Trainer:
 
             if should_test:
                 self.test_diffusion_model()
+
+            # Inference
+            should_inference = (
+                self._rank == 0
+                and self._cfg.inference.should
+                and (self.epoch % self._cfg.inference.every == 0)
+            )
+
+            if should_inference:
+                self.inference_diffusion_model()
 
             # Logging
             if self._rank == 0:
@@ -242,6 +256,24 @@ class Trainer:
         to_log = {f"test/{k}": v for k, v in to_log.items()}
         wandb_log(to_log, self.epoch, self.global_step)
 
+    @torch.no_grad()
+    def inference_diffusion_model(self):
+        self.diffusion_model.eval()
+        breakpoint()
+        model = self.diffusion_model
+        data_loader = self._data_loader_test
+        eval_loss = 0.0
+        for batch in tqdm(data_loader, desc="Evaluating"):
+            batch = batch.to(self._device)
+            loss = self.call_model(model, batch)
+            eval_loss += loss.item()
+
+        eval_loss = eval_loss / len(data_loader)
+        to_log = {"loss": eval_loss}
+
+        to_log = {f"test/{k}": v for k, v in to_log.items()}
+        wandb_log(to_log, self.epoch, self.global_step)
+
     def save_checkpoint(self) -> None:
         if self._rank == 0:
             self._keep_model_copies(self.diffusion_model.state_dict(), self.epoch)
@@ -250,10 +282,18 @@ class Trainer:
         obs, act = batch.obs, batch.act
         n = obs.shape[0]
         t = torch.randint(0, self.diffusion.num_timesteps, (n,), device=self._device)
-        prev_obs = obs[:, :-1]
-        prev_act = act[:, :-1]
-        model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
-        current_obs = obs[:, -1]
-        loss_dict = self.diffusion.training_losses(model, current_obs, t, model_kwargs)
+        if isinstance(model, DiT):
+            prev_obs = obs[:, :-1]
+            prev_act = act[:, :-1]
+            model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
+            current_obs = obs[:, -1]
+            loss_dict = self.diffusion.training_losses(model, current_obs, t, model_kwargs)
+        elif isinstance(model, VDA):
+            prev_act = act[:, :-1]
+            model_kwargs = dict(prev_act=prev_act)
+            loss_dict = self.diffusion.training_losses(model, obs, t, model_kwargs)
+        else:
+            raise ValueError(f'{type(model)} is not recognized')
+
         loss = loss_dict["loss"].mean()
         return loss
