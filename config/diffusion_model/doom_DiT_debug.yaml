@@ -10,6 +10,8 @@ model:
   num_heads: 4
   mlp_ratio: 4.0
   time_frequency_embedding_size: 32
+  enable_conditioning: True
+
 
     
 training:

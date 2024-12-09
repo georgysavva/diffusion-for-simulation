@@ -240,7 +240,7 @@ class DiT(nn.Module):
         num_heads,
         mlp_ratio,
         time_frequency_embedding_size,
-        enable_conditioning=True,
+        enable_conditioning,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -265,7 +265,6 @@ class DiT(nn.Module):
         self.noised_obs_pos_embed = nn.Parameter(
             torch.zeros(1, num_patches, hidden_size), requires_grad=False
         )
-
         self.blocks = nn.ModuleList(
             [
                 DiTBlock(

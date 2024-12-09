@@ -10,10 +10,11 @@ model:
   num_heads: 12
   mlp_ratio: 4.0
   time_frequency_embedding_size: 256
+  enable_conditioning: True
 
 
 training:
-  batch_size: 32
+  batch_size: 64
   steps_per_epoch: 50
   num_epochs: 1600
   lr_warmup_steps: 100
