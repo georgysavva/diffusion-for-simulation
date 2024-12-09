@@ -15,7 +15,10 @@ from src.utils import prepare_image_obs, save_np_video, to_numpy_video
 
 
 def main(args):
-    device = torch.device(args.device)
+    if args.device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
     diffusion = create_diffusion(str(args.num_sampling_steps), learn_sigma=False)
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(device)
     vae.decoder.load_state_dict(
@@ -110,9 +113,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--img_resolution", type=int, help="Resolution of the images.", default=256
     )
-    parser.add_argument(
-        "--device", type=str, default="cuda", help="Device to run the evaluation on."
-    )
+    parser.add_argument("--device", type=str, help="Device to run the evaluation on.")
     parser.add_argument(
         "--vae_batch_size",
         type=int,
