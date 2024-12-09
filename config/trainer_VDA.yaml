@@ -37,8 +37,8 @@ static_dataset:
 
 training:
   should: True
-  num_workers_data_loaders: 0
-  # num_workers_data_loaders: 8
+  # num_workers_data_loaders: 0
+  num_workers_data_loaders: 8
 
 evaluation:
   should: True
