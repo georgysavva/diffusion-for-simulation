@@ -13,7 +13,8 @@ model:
 
 
 training:
-  batch_size: 32
+  train_batch_size: 32
+  eval_batch_size: 32
   steps_per_epoch: 50
   num_epochs: 1600
   lr_warmup_steps: 100
@@ -23,5 +24,3 @@ training:
     lr: 1e-5
     weight_decay: 0.0
     eps: 1e-8
-  
-

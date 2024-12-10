@@ -23,5 +23,3 @@ training:
     lr: 1e-5
     weight_decay: 0.0
     eps: 1e-8
-  
-

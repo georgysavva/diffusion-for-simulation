@@ -168,13 +168,19 @@ class VDA(nn.Module):
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
 
-    def load_pretrained_weights(self, weights):
-        missing_keys, unexpected_keys = self.load_state_dict(
-            weights, strict=False
-        )  # This doesn't work yet. Fix the layers.
-        print(
-            f"Loaded pretrained weights. Missing keys: {missing_keys}. Unexpected keys: {unexpected_keys}"
-        )
+    def load_pretrained_weights(self, pretrained_weights_path):
+        loaded_weights = torch.load(pretrained_weights_path, weights_only=False)
+        assert {n for n, _ in self.named_parameters()} == set(loaded_weights.keys())
+
+        for n, p in self.named_parameters():
+            assert n in loaded_weights
+            assert p.shape == loaded_weights[n].shape
+            requires_grad = p.requires_grad
+            p.requires_grad = False
+            p.copy_(loaded_weights[n])
+            p.requires_grad = requires_grad
+
+        print('done loading pretrained weights from', pretrained_weights_path)
 
     def initialize_weights(self):
         # Initialize transformer layers:

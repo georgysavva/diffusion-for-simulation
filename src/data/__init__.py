@@ -3,6 +3,7 @@ from .batch_sampler import BatchSampler
 from .dataset import (
     Dataset,
     TestDatasetTraverser,
+    TestDatasetTraverserNew,
     collate_segments_to_batch,
     make_segment,
 )

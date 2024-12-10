@@ -1,7 +1,9 @@
+import os
 import shutil
 import time
 from functools import partial
 from pathlib import Path
+from copy import deepcopy
 
 import torch
 import torch.distributed as dist
@@ -15,6 +17,7 @@ from src.data import (
     BatchSampler,
     Dataset,
     TestDatasetTraverser,
+    TestDatasetTraverserNew,
     collate_segments_to_batch,
 )
 from src.diffusion import create_diffusion
@@ -30,6 +33,9 @@ from src.utils import (
 from src.models.DiT import DiT
 from src.models.VDA import VDA
 
+from diffusers import AutoencoderKL
+from torchvision.utils import make_grid
+from PIL import Image
 
 
 class Trainer:
@@ -55,12 +61,14 @@ class Trainer:
             )  # fix compilation error on multi-gpu nodes
 
         # Init wandb
-        if self._rank == 0:
+        if self._rank == 0 and self._cfg.wandb.do_log:
             assert cfg.experiment_name, "experiment_name must be provided in hydra"
             wandb.init(
                 config=OmegaConf.to_container(cfg, resolve=True),
                 reinit=True,
-                **cfg.wandb,
+                project=self._cfg.wandb.project,
+                entity=self._cfg.wandb.entity,
+                name=self._cfg.wandb.name,
             )
 
         # Checkpointing
@@ -97,12 +105,7 @@ class Trainer:
             cfg.pretrained_weights is None or cfg.initialization.path_to_ckpt is None
         ), "Only one of pretrained_weights or path_to_ckpt should be provided"
         if cfg.pretrained_weights is not None:
-            weights = download_model_weights(
-                cfg.pretrained_weights.url,
-                cfg.pretrained_weights.save_path,
-                self._device,
-            )
-            self.diffusion_model.load_pretrained_weights(weights)
+            self.diffusion_model.load_pretrained_weights(cfg.pretrained_weights)
 
         if cfg.initialization.path_to_ckpt is not None:
             sd = torch.load(
@@ -116,8 +119,10 @@ class Trainer:
 
         # Optimizers and LR schedulers
 
+        optim_cfg = cfg.diffusion_model.training.optimizer
         self.opt = torch.optim.AdamW(
-            self.diffusion_model.parameters(), **cfg.diffusion_model.training.optimizer
+            self.diffusion_model.parameters(),
+            lr=optim_cfg.base_lr * cfg.diffusion_model.training.train_batch_size if optim_cfg.scale_lr else optim_cfg.base_lr,
         )
 
         self.lr_sched = get_lr_sched(
@@ -133,7 +138,7 @@ class Trainer:
             self.train_dataset,
             self._rank,
             self._world_size,
-            c.batch_size,
+            c.train_batch_size,
             seq_length,
             guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
         )
@@ -148,9 +153,32 @@ class Trainer:
             batch_sampler=batch_sampler,
         )
 
-        self._data_loader_test = TestDatasetTraverser(
-            self.test_dataset, c.batch_size, seq_length
-        )
+        if cfg.evaluation.dataloader_name == 'TestDatasetTraverser':
+            self._data_loader_test = TestDatasetTraverser(
+                self.test_dataset, c.train_batch_size, seq_length
+            )
+        elif cfg.evaluation.dataloader_name == 'TestDatasetTraverserNew':
+            self._data_loader_test = TestDatasetTraverserNew(
+                self.test_dataset, c.eval_batch_size, seq_length, cfg.evaluation.subsample_rate
+            )
+        else:
+            raise ValueError(f'{cfg.evaluation.dataloader_name} is not recognized')
+
+        if cfg.inference.dataloader_name == 'TestDatasetTraverser':
+            self._data_loader_inference = TestDatasetTraverser(
+                self.test_dataset, c.train_batch_size, seq_length
+            )
+        elif cfg.inference.dataloader_name == 'TestDatasetTraverserNew':
+            self._data_loader_inference = TestDatasetTraverserNew(
+                self.test_dataset, c.eval_batch_size, seq_length, cfg.inference.subsample_rate
+            )
+        else:
+            raise ValueError(f'{cfg.inference.dataloader_name} is not recognized')
+
+        vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(self._device)
+        vae.decoder.load_state_dict(torch.load(cfg.inference.vae_path, weights_only=True, map_location=self._device))
+        vae.eval()
+        self.vae = vae
 
         # Training state (things to be saved/restored)
         self.epoch = 0
@@ -186,17 +214,17 @@ class Trainer:
                 self.test_diffusion_model()
 
             # Inference
-            # should_inference = (
-            #     self._rank == 0
-            #     and self._cfg.inference.should
-            #     and (self.epoch % self._cfg.inference.every == 0)
-            # )
+            should_inference = (
+                self._rank == 0
+                and self._cfg.inference.should
+                and (self.epoch % self._cfg.inference.every == 0)
+            )
 
-            # if should_inference:
-            #     self.inference_diffusion_model()
+            if should_inference:
+                self.inference_diffusion_model()
 
             # Logging
-            if self._rank == 0:
+            if self._rank == 0 and self._cfg.wandb.do_log:
                 wandb_log(
                     {"duration": (time.time() - start_time) / 3600},
                     self.epoch,
@@ -208,6 +236,10 @@ class Trainer:
 
             if dist.is_initialized():
                 dist.barrier()
+
+            # if not training, no need to repeatedly eval or inference
+            if not self._cfg.training.should:
+                break
 
     def train_diffusion_model(self):
         self.diffusion_model.train()
@@ -225,7 +257,7 @@ class Trainer:
         for _ in trange(num_steps, desc=f"Training", disable=self._rank > 0):
             self.global_step = self.global_step + 1
             batch = next(data_iterator).to(self._device)
-            loss = self.call_model(model, batch)
+            loss, _ = self.call_model(model, batch)
             loss.backward()
             to_log = {"loss": loss.item()}
 
@@ -237,41 +269,61 @@ class Trainer:
                 lr_sched.step()
 
             to_log = {f"train/{k}": v for k, v in to_log.items()}
-            wandb_log(to_log, self.epoch, self.global_step)
+            if self._cfg.wandb.do_log:
+                wandb_log(to_log, self.epoch, self.global_step)
 
     @torch.no_grad()
     def test_diffusion_model(self):
         self.diffusion_model.eval()
         model = self.diffusion_model
         data_loader = self._data_loader_test
-        eval_loss = 0.0
+        eval_loss, eval_loss_last_frame = 0.0, 0.0
         for batch in tqdm(data_loader, desc="Evaluating"):
             batch = batch.to(self._device)
-            loss = self.call_model(model, batch)
+            loss, loss_last_frame = self.call_model(model, batch)
             eval_loss += loss.item()
+            eval_loss_last_frame += loss_last_frame.item()
 
         eval_loss = eval_loss / len(data_loader)
-        to_log = {"loss": eval_loss}
+        eval_loss_last_frame = eval_loss_last_frame / len(data_loader)
+        to_log = {"loss": eval_loss, 'loss_last_frame': eval_loss_last_frame}
 
         to_log = {f"test/{k}": v for k, v in to_log.items()}
-        wandb_log(to_log, self.epoch, self.global_step)
+        if self._cfg.wandb.do_log:
+            wandb_log(to_log, self.epoch, self.global_step)
 
     @torch.no_grad()
     def inference_diffusion_model(self):
         self.diffusion_model.eval()
         model = self.diffusion_model
-        data_loader = self._data_loader_test
-        eval_loss = 0.0
-        for batch in tqdm(data_loader, desc="Evaluating"):
-            batch = batch.to(self._device)
-            loss = self.call_model(model, batch)
-            eval_loss += loss.item()
+        data_loader = self._data_loader_inference
+        diffusion = create_diffusion(str(self._cfg.inference.num_sampling_steps), learn_sigma=False)
 
-        eval_loss = eval_loss / len(data_loader)
-        to_log = {"loss": eval_loss}
+        all_decoded_samples = []
+        for batch in tqdm(data_loader, desc="Inferencing"):
+            prev_act = batch.act[:, :-1].to(self._device)
+            z = torch.randn_like(batch.obs, device=self._device)
+            samples = diffusion.ddim_sample_loop(model.forward, batch.obs.shape, z, clip_denoised=False, model_kwargs={'prev_act': prev_act}, progress=True, device=self._device)
+            # vae decode
+            decoded_samples = []
+            for frame_i in range(samples.shape[1]):
+                decoded_sample = self.vae.decode(samples[:, frame_i] / 0.18215).sample.clamp(-1, 1)
+                decoded_samples.append(decoded_sample)
+            decoded_samples = torch.stack(decoded_samples, dim=1) # (N, seqlen, 3, 256, 256) in [-1, 1]
+            decoded_samples = ((decoded_samples * 0.5 + 0.5) * 255.0).clamp(0, 255).byte()
+            all_decoded_samples.append(decoded_samples.cpu())
+        all_decoded_samples = torch.cat(all_decoded_samples, dim=0)
 
-        to_log = {f"test/{k}": v for k, v in to_log.items()}
-        wandb_log(to_log, self.epoch, self.global_step)
+        sample_dir = os.path.join(self._cfg.common.run_dir, f'inference_epoch_{self.epoch}')
+        os.makedirs(sample_dir, exist_ok=True)
+        print('saving inference results to', sample_dir)
+        for sample_i, sample in enumerate(all_decoded_samples):
+            grid = make_grid(sample, nrow=sample.shape[0], padding=2)
+            image = Image.fromarray(grid.permute(1, 2, 0).cpu().numpy())
+            image.save(os.path.join(sample_dir, f'{sample_i}.jpg'))
+
+            if self._cfg.wandb.do_log and sample_i < self._cfg.inference.num_log_wandb:
+                wandb.log({f'inference_img_{sample_i}': wandb.Image(image), "epoch": self.epoch}, step=self.global_step)
 
     def save_checkpoint(self) -> None:
         if self._rank == 0:
@@ -295,4 +347,5 @@ class Trainer:
             raise ValueError(f'{type(model)} is not recognized')
 
         loss = loss_dict["loss"].mean()
-        return loss
+        loss_last_frame = loss_dict['loss'].mean()
+        return loss, loss_last_frame

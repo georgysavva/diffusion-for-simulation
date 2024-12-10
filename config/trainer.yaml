@@ -5,6 +5,7 @@ defaults:
 
 
 wandb:
+  do_log: True
   project: diffusion-for-simulation-doom
   entity: diffusion-for-simulation
   name: ${common.run_name}
@@ -43,6 +44,7 @@ training:
   num_workers_data_loaders: 0
 
 evaluation:
+  dataloader_name: TestDatasetTraverser
   should: True
   every: 5
 
