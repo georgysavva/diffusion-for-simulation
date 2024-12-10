@@ -54,12 +54,14 @@ class Trainer:
             )  # fix compilation error on multi-gpu nodes
 
         # Init wandb
-        if self._rank == 0:
+        if self._rank == 0 and self._cfg.wandb.do_log:
             assert cfg.experiment_name, "experiment_name must be provided in hydra"
             wandb.init(
                 config=OmegaConf.to_container(cfg, resolve=True),
                 reinit=True,
-                **cfg.wandb,
+                project=self._cfg.wandb.project,
+                entity=self._cfg.wandb.entity,
+                name=self._cfg.wandb.name,
             )
 
         # Checkpointing
@@ -75,9 +77,14 @@ class Trainer:
         p = Path(cfg.static_dataset.path)
         self.train_dataset = Dataset(
             p / "train",
+            guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
             cache_in_ram=False,
         )
-        self.test_dataset = Dataset(p / "test", cache_in_ram=True)
+        self.test_dataset = Dataset(
+            p / "test",
+            cfg.static_dataset.guarantee_full_seqs,
+            cache_in_ram=True,
+        )
 
         # Create models
         if self._rank == 0:
@@ -116,8 +123,14 @@ class Trainer:
 
         # Optimizers and LR schedulers
 
+        optim_cfg = cfg.diffusion_model.training.optimizer
         self.opt = torch.optim.AdamW(
-            self.diffusion_model.parameters(), **cfg.diffusion_model.training.optimizer
+            self.diffusion_model.parameters(),
+            lr=(
+                optim_cfg.base_lr * cfg.diffusion_model.training.train_batch_size
+                if optim_cfg.scale_lr
+                else optim_cfg.base_lr
+            ),
         )
 
         self.lr_sched = get_lr_sched(
@@ -133,8 +146,9 @@ class Trainer:
             self.train_dataset,
             self._rank,
             self._world_size,
-            c.batch_size,
+            c.train_batch_size,
             seq_length,
+            guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
         )
 
         self._data_loader_train = DataLoader(
@@ -148,8 +162,22 @@ class Trainer:
         )
 
         self._data_loader_test = TestDatasetTraverser(
-            self.test_dataset, c.batch_size, seq_length
+            self.test_dataset,
+            c.eval_batch_size,
+            seq_length,
+            cfg.evaluation.subsample_rate,
         )
+
+        vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(
+            self._device
+        )
+        vae.decoder.load_state_dict(
+            torch.load(
+                cfg.inference.vae_path, weights_only=True, map_location=self._device
+            )
+        )
+        vae.eval()
+        self.vae = vae
 
         # Training state (things to be saved/restored)
         self.epoch = 0
@@ -184,6 +212,16 @@ class Trainer:
             if should_test:
                 self.test_diffusion_model()
 
+            # Inference
+            should_inference = (
+                self._rank == 0
+                and self._cfg.inference.should
+                and (self.epoch % self._cfg.inference.every == 0)
+            )
+
+            if should_inference:
+                self.inference_diffusion_model()
+
             # Logging
             if self._rank == 0:
                 wandb_log(
@@ -197,6 +235,10 @@ class Trainer:
 
             if dist.is_initialized():
                 dist.barrier()
+
+            # if not training, no need to repeatedly eval or inference
+            if not self._cfg.training.should:
+                break
 
     def train_diffusion_model(self):
         self.diffusion_model.train()

@@ -5,6 +5,7 @@ defaults:
 
 
 wandb:
+  do_log: True
   project: diffusion-for-simulation-doom
   entity: diffusion-for-simulation
   name: ${common.run_name}
@@ -35,6 +36,7 @@ checkpointing:
 static_dataset:
   path: ${env.data_path}
   ignore_sample_weights: True
+  guarantee_full_seqs: False
 
 training:
   should: True
@@ -42,7 +44,12 @@ training:
 
 evaluation:
   should: True
-  every: 5
+  subsample_rate: 10
+  every: 1
+
+inference:
+  should: False
+  every: 20
 
 hydra:
   run:
