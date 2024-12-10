@@ -40,12 +40,18 @@ def main(args):
 
     episode = Episode.load(args.episode_path)
     episode_name = os.path.splitext(os.path.basename(args.episode_path))[0]
-    episode.obs = prepare_image_obs(episode.obs, args.img_resolution)
+    episode.obs = prepare_image_obs(
+        episode.obs, run_config.static_dataset.img_resolution
+    )
 
     evaluator = TrajectoryEvaluator(
         diffusion=diffusion,
         vae=vae,
-        num_seed_steps=args.num_seed_steps,
+        num_seed_steps=(
+            run_config.diffusion_model.model.num_conditioning_steps
+            if run_config.static_dataset.guarantee_full_seqs
+            else args.num_seed_steps
+        ),
         num_conditioning_steps=run_config.diffusion_model.model.num_conditioning_steps,
         sampling_algorithm=args.sampling_algorithm,
         vae_batch_size=args.vae_batch_size,
@@ -53,28 +59,22 @@ def main(args):
     )
     output_dir = run_dir / "trajectory_evaluation" / args.model_version / episode_name
     output_dir.mkdir(parents=True, exist_ok=True)
-    for auto_regressive in [False]:
+    for generation_mode in ["teacher_forcing"]:
         generated_trajectory = evaluator.evaluate_episode(
-            diffusion_model, episode, auto_regressive
-        )
-        auto_regressive_tag = (
-            "auto_regressive" if auto_regressive else "teacher_forcing"
+            diffusion_model, episode, generation_mode
         )
         save_np_video(
             generated_trajectory,
-            output_dir
-            / f"generated_{auto_regressive_tag}_{args.sampling_algorithm}.mp4",
-            args.fps,
+            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
+            run_config.env.fps,
         )
 
     ground_truth_trajectory = to_numpy_video(episode.obs)
     save_np_video(
         ground_truth_trajectory,
         output_dir / f"ground_truth.mp4",
-        args.fps,
+        run_config.env.fps,
     )
-    vae_video = evaluator.run_vae_on_episode(episode)
-    save_np_video(vae_video, output_dir / f"vae_reconstruction.mp4", args.fps)
 
 
 if __name__ == "__main__":
@@ -106,12 +106,6 @@ if __name__ == "__main__":
         type=int,
         help="Number of diffusion sampling steps.",
         default=8,
-    )
-    parser.add_argument(
-        "--fps", type=int, help="Trajectory frames per second.", default=35
-    )
-    parser.add_argument(
-        "--img_resolution", type=int, help="Resolution of the images.", default=256
     )
     parser.add_argument("--device", type=str, help="Device to run the evaluation on.")
     parser.add_argument(

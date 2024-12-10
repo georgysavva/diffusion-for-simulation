@@ -54,13 +54,13 @@ class Dataset(TorchDataset):
         if self._cache_in_ram and episode_id in self._cache:
             episode = self._cache[episode_id]
         else:
-            episode = Episode.load(self._get_episode_path(episode_id))
+            episode = Episode.load(self.get_episode_path(episode_id))
             episode.obs = episode.obs.mul_(0.18215)
             if self._cache_in_ram:
                 self._cache[episode_id] = episode
         return episode
 
-    def _get_episode_path(self, episode_id: int) -> Path:
+    def get_episode_path(self, episode_id: int) -> Path:
 
         return self._directory / f"episode_{episode_id}.pt"
 

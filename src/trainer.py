@@ -1,11 +1,11 @@
 import os
-import shutil
 import time
 from functools import partial
 from pathlib import Path
 
 import torch
 import torch.distributed as dist
+from diffusers import AutoencoderKL
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
@@ -18,14 +18,18 @@ from src.data import (
     TestDatasetTraverser,
     collate_segments_to_batch,
 )
+from src.data.episode import Episode
 from src.diffusion import create_diffusion
+from src.traj_eval import TrajectoryEvaluator
 from src.utils import (
     build_ddp_wrapper,
     count_parameters,
     download_model_weights,
     get_lr_sched,
     keep_model_copies_every,
+    prepare_image_obs,
     set_seed,
+    to_numpy_video,
     wandb_log,
 )
 
@@ -59,9 +63,7 @@ class Trainer:
             wandb.init(
                 config=OmegaConf.to_container(cfg, resolve=True),
                 reinit=True,
-                project=self._cfg.wandb.project,
-                entity=self._cfg.wandb.entity,
-                name=self._cfg.wandb.name,
+                **cfg.wandb,
             )
 
         # Checkpointing
@@ -168,6 +170,17 @@ class Trainer:
             cfg.evaluation.subsample_rate,
         )
 
+        # Training state (things to be saved/restored)
+        self.epoch = 0
+        self.global_step = 0
+
+        self.diffusion = create_diffusion(
+            timestep_respacing=str(cfg.diffusion.num_sampling_steps),
+            learn_sigma=cfg.diffusion.learn_sigma,
+        )  # default: 1000 steps, linear noise schedule
+        self._setup_inference(cfg)
+
+    def _setup_inference(self, cfg: DictConfig) -> None:
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(
             self._device
         )
@@ -177,16 +190,24 @@ class Trainer:
             )
         )
         vae.eval()
-        self.vae = vae
+        episode_path = Path(cfg.inference.episode_path)
+        episode = Episode.load(episode_path)
+        episode.obs = prepare_image_obs(episode.obs, cfg.static_dataset.img_resolution)
+        self.inference_episode = episode
 
-        # Training state (things to be saved/restored)
-        self.epoch = 0
-        self.global_step = 0
-
-        self.diffusion = create_diffusion(
-            timestep_respacing="",
-            learn_sigma=cfg.diffusion.learn_sigma,
-        )  # default: 1000 steps, linear noise schedule
+        self.trajectory_evaluator = TrajectoryEvaluator(
+            diffusion=self.diffusion,
+            vae=vae,
+            num_seed_steps=(
+                cfg.diffusion_model.model.num_conditioning_steps
+                if cfg.static_dataset.guarantee_full_seqs
+                else cfg.inference.num_seed_steps
+            ),
+            num_conditioning_steps=cfg.diffusion_model.model.num_conditioning_steps,
+            sampling_algorithm=cfg.inference.sampling_algorithm,
+            vae_batch_size=cfg.inference.vae_batch_size,
+            device=self._device,
+        )
 
     def run(self) -> None:
 
@@ -286,6 +307,27 @@ class Trainer:
 
         to_log = {f"test/{k}": v for k, v in to_log.items()}
         wandb_log(to_log, self.epoch, self.global_step)
+
+    @torch.no_grad()
+    def inference_diffusion_model(self):
+        self.diffusion_model.eval()
+        for generation_mode in self._cfg.inference.generation_mode:
+            generated_trajectory = self.trajectory_evaluator.evaluate_episode(
+                self.diffusion_model, self.inference_episode, generation_mode
+            )
+            video = wandb.Video(generated_trajectory, fps=self._cfg.env.fps)
+            wandb_log(
+                {f"inference/{generation_mode}": video},
+                self.epoch,
+                self.global_step,
+            )
+        ground_truth_trajectory = to_numpy_video(self.inference_episode.obs)
+        video = wandb.Video(ground_truth_trajectory, fps=self._cfg.env.fps)
+        wandb_log(
+            {f"inference/ground_truth": video},
+            self.epoch,
+            self.global_step,
+        )
 
     def save_checkpoint(self) -> None:
         if self._rank == 0:

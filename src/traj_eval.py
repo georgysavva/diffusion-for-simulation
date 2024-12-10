@@ -37,7 +37,7 @@ class TrajectoryEvaluator:
 
     @torch.no_grad()
     def evaluate_episode(
-        self, model, episode: Episode, auto_regressive: bool = False
+        self, model, episode: Episode, generation_mode: str
     ) -> np.ndarray:
         model.eval()
         self._vae.eval()
@@ -80,10 +80,15 @@ class TrajectoryEvaluator:
                 prev_act = torch.roll(prev_act, -1, 0)
                 prev_act[-1] = act[step]
                 prev_obs = torch.roll(prev_obs, -1, 0)
-                if auto_regressive:
+                if generation_mode == "auto_regressive":
                     prev_obs[-1] = generated_obs
-                else:
+                elif generation_mode == "teacher_forcing":
                     prev_obs[-1] = obs_latent[step]
+                else:
+                    raise ValueError(
+                        f"Unknown generation mode: {generation_mode}. "
+                        "Choose from ['auto_regressive', 'teacher_forcing']."
+                    )
             generated_trajectory_latent[step - self._num_seed_steps] = generated_obs
         generated_trajectory_img_norm = self._run_decode_on_episode(
             generated_trajectory_latent
