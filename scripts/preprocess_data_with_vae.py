@@ -50,9 +50,7 @@ if __name__ == "__main__":
         default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent",
     )
     parser.add_argument("--resolution", type=int, default=256)
-    parser.add_argument(
-        "--device", type=str, default="cuda", help="Device to use for computation"
-    )
+    parser.add_argument("--device", type=str, help="Device to use for computation")
     parser.add_argument(
         "--batch_size", type=int, default=256, help="Batch size for inference"
     )
@@ -61,11 +59,16 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     dataset_type = args.dataset_type
+    if args.device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
     print(f"Preprocessing {dataset_type} data...")
     data_path, save_path = Path(args.data_path), Path(args.save_path)
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema")
     vae.eval()
-    vae.to(args.device)
+
+    vae.to(device)
 
     dataset = Dataset(
         data_path / dataset_type,

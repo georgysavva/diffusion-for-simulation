@@ -15,8 +15,10 @@ from src.utils import prepare_image_obs, save_np_video, to_numpy_video
 
 
 def main(args):
-    device = torch.device(args.device)
-    diffusion = create_diffusion(str(args.num_sampling_steps), learn_sigma=False)
+    if args.device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(device)
     vae.decoder.load_state_dict(
         torch.load(args.vae_decoder_path, weights_only=True, map_location=device)
@@ -24,9 +26,10 @@ def main(args):
     run_dir = Path(args.run_dir)
     run_config_path = run_dir / ".hydra" / "config.yaml"
     run_config = OmegaConf.load(run_config_path)
-    diffusion_model = instantiate(
-        run_config.diffusion_model.model, num_actions=run_config.env.num_actions
-    ).to(device)
+    diffusion = create_diffusion(
+        str(args.num_sampling_steps), learn_sigma=run_config.diffusion.learn_sigma
+    )
+    diffusion_model = instantiate(run_config.diffusion_model.model).to(device)
     diffusion_model.load_state_dict(
         torch.load(
             run_dir / "diffusion_model_versions" / args.model_version,
@@ -110,13 +113,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--img_resolution", type=int, help="Resolution of the images.", default=256
     )
-    parser.add_argument(
-        "--device", type=str, default="cuda", help="Device to run the evaluation on."
-    )
+    parser.add_argument("--device", type=str, help="Device to run the evaluation on.")
     parser.add_argument(
         "--vae_batch_size",
         type=int,
-        default=32,
+        default=128,
         help="Batch size for VAE encode and decode",
     )
     parser.add_argument(
