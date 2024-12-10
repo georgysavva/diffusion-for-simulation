@@ -117,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--vae_batch_size",
         type=int,
-        default=32,
+        default=128,
         help="Batch size for VAE encode and decode",
     )
     parser.add_argument(
