@@ -41,7 +41,7 @@ def main(args):
     episode = Episode.load(args.episode_path)
     episode_name = os.path.splitext(os.path.basename(args.episode_path))[0]
     episode.obs = prepare_image_obs(
-        episode.obs, run_config.static_dataset.img_resolution
+        episode.obs, run_config.static_dataset.image_resolution
     )
 
     evaluator = TrajectoryEvaluator(
@@ -57,7 +57,12 @@ def main(args):
         vae_batch_size=args.vae_batch_size,
         device=device,
     )
-    output_dir = run_dir / "trajectory_evaluation" / args.model_version / episode_name
+    output_dir = (
+        run_dir
+        / "trajectory_evaluation"
+        / args.model_version.split(".")[0]
+        / episode_name
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     for generation_mode in ["teacher_forcing"]:
         generated_trajectory = evaluator.evaluate_episode(

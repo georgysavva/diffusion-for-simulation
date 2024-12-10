@@ -28,6 +28,7 @@ from src.utils import (
     get_lr_sched,
     keep_model_copies_every,
     prepare_image_obs,
+    save_np_video,
     set_seed,
     to_numpy_video,
     wandb_log,
@@ -58,7 +59,7 @@ class Trainer:
             )  # fix compilation error on multi-gpu nodes
 
         # Init wandb
-        if self._rank == 0 and self._cfg.wandb.do_log:
+        if self._rank == 0:
             assert cfg.experiment_name, "experiment_name must be provided in hydra"
             wandb.init(
                 config=OmegaConf.to_container(cfg, resolve=True),
@@ -67,11 +68,12 @@ class Trainer:
             )
 
         # Checkpointing
-
+        self.run_dir = Path(cfg.common.run_dir)
+        print("Run dir:", self.run_dir)
         self._keep_model_copies = partial(
             keep_model_copies_every,
             every=cfg.checkpointing.save_diffusion_model_every,
-            path_ckpt_dir=Path(cfg.common.run_dir),
+            path_ckpt_dir=self.run_dir,
             num_to_keep=cfg.checkpointing.num_to_keep,
         )
 
@@ -192,8 +194,14 @@ class Trainer:
         vae.eval()
         episode_path = Path(cfg.inference.episode_path)
         episode = Episode.load(episode_path)
-        episode.obs = prepare_image_obs(episode.obs, cfg.static_dataset.img_resolution)
+        episode.obs = prepare_image_obs(
+            episode.obs, cfg.static_dataset.image_resolution
+        )
+        if "take_n_first_frames" in cfg.inference:
+            episode = episode.slice(0, cfg.inference.take_n_first_frames)
+
         self.inference_episode = episode
+        self.inference_episode_name = os.path.splitext(episode_path.name)[0]
 
         self.trajectory_evaluator = TrajectoryEvaluator(
             diffusion=self.diffusion,
@@ -311,22 +319,28 @@ class Trainer:
     @torch.no_grad()
     def inference_diffusion_model(self):
         self.diffusion_model.eval()
+        output_dir = (
+            self.run_dir
+            / "trajectory_evaluation"
+            / f"diffusion_model_epoch_{self.epoch:05d}"
+            / self.inference_episode_name
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
         for generation_mode in self._cfg.inference.generation_mode:
             generated_trajectory = self.trajectory_evaluator.evaluate_episode(
                 self.diffusion_model, self.inference_episode, generation_mode
             )
-            video = wandb.Video(generated_trajectory, fps=self._cfg.env.fps)
-            wandb_log(
-                {f"inference/{generation_mode}": video},
-                self.epoch,
-                self.global_step,
+            save_np_video(
+                generated_trajectory,
+                output_dir
+                / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.mp4",
+                fps=self._cfg.env.fps,
             )
         ground_truth_trajectory = to_numpy_video(self.inference_episode.obs)
-        video = wandb.Video(ground_truth_trajectory, fps=self._cfg.env.fps)
-        wandb_log(
-            {f"inference/ground_truth": video},
-            self.epoch,
-            self.global_step,
+        save_np_video(
+            ground_truth_trajectory,
+            output_dir / "ground_truth.mp4",
+            fps=self._cfg.env.fps,
         )
 
     def save_checkpoint(self) -> None:

@@ -146,6 +146,7 @@ class TestDatasetTraverser:
                 segment = make_segment(
                     episode,
                     SegmentId(episode_id, start, stop),
+                    guarantee_full_seqs=True,
                 )
                 chunks.append(segment)
 

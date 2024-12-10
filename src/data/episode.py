@@ -19,6 +19,13 @@ class Episode:
     def to(self, device) -> Episode:
         return Episode(**{k: v.to(device) for k, v in self.__dict__.items()})
 
+    def slice(self, start, stop) -> Episode:
+        return Episode(
+            obs=self.obs[start:stop],
+            act=self.act[start:stop],
+            rew=self.rew[start:stop],
+        )
+
     @classmethod
     def load(cls, path: Path, map_location: Optional[torch.device] = None) -> Episode:
         data = torch.load(
