@@ -18,8 +18,8 @@ model:
 
 
 training:
-  train_batch_size: 64
-  eval_batch_size: 64
+  train_batch_size: 32
+  eval_batch_size: 32
   steps_per_epoch: 500
   num_epochs: 1000000
   lr_warmup_steps: 100
