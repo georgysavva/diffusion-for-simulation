@@ -1,6 +1,6 @@
 model:
   _target_: src.models.VDA.VDA
-  num_actions: ...
+  num_actions: ${env.num_actions}
   num_conditioning_steps: 7
   input_size: 32
   patch_size: 4
@@ -12,7 +12,7 @@ model:
   time_frequency_embedding_size: 256
   use_frame_embedding: False
   use_action_embedding: False
-
+  learn_sigma: ${diffusion.learn_sigma}
 
 training:
   train_batch_size: 128

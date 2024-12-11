@@ -142,10 +142,12 @@ class VDA(nn.Module):
         time_frequency_embedding_size,
         use_frame_embedding,
         use_action_embedding,
+        learn_sigma,
     ):
         super().__init__()
+        self.learn_sigma = learn_sigma
         self.in_channels = in_channels
-        self.out_channels = in_channels
+        self.out_channels = in_channels * 2 if learn_sigma else in_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
 
@@ -170,15 +172,20 @@ class VDA(nn.Module):
 
     def load_pretrained_weights(self, pretrained_weights_path):
         loaded_weights = torch.load(pretrained_weights_path, weights_only=False)
-        assert {n for n, _ in self.named_parameters()} == set(loaded_weights.keys())
+        model_param_names = [n for n, _ in self.named_parameters()]
+
+        not_in_loaded = {n for n in model_param_names if n not in loaded_weights}
+        not_in_model = {n for n in loaded_weights if n not in model_param_names}
+        print('parameters not in loaded:', not_in_loaded)
+        print('parameters not in model:', not_in_model)
 
         for n, p in self.named_parameters():
-            assert n in loaded_weights
-            assert p.shape == loaded_weights[n].shape
-            requires_grad = p.requires_grad
-            p.requires_grad = False
-            p.copy_(loaded_weights[n])
-            p.requires_grad = requires_grad
+            if n in loaded_weights:
+                assert p.shape == loaded_weights[n].shape, n
+                requires_grad = p.requires_grad
+                p.requires_grad = False
+                p.copy_(loaded_weights[n])
+                p.requires_grad = requires_grad
 
         print('done loading pretrained weights from', pretrained_weights_path)
 

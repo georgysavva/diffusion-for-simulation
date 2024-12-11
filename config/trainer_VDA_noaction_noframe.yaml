@@ -10,6 +10,9 @@ wandb:
   entity: diffusion-for-simulation
   name: ${common.run_name}
 
+diffusion:
+  learn_sigma: False
+
 pretrained_weights: null
 # pretrained_weights: /scratch/gs4288/shared/diffusion_for_simulation/runs/2024.12.09T06-20_vda_noaction_noframe/diffusion_model_versions/diffusion_model_epoch_01600.pt
 
@@ -43,6 +46,7 @@ evaluation:
   subsample_rate: 5
   # subsample_rate: 100000
   every: 1
+  max_num_episodes: 1000000
 
 inference:
   should: True
@@ -53,6 +57,7 @@ inference:
   # num_sampling_steps: 5
   vae_path: /scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth
   num_log_wandb: 20
+  max_num_episodes: 1000000
 
 hydra:
   run:

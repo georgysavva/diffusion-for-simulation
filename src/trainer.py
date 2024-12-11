@@ -156,7 +156,7 @@ class Trainer:
             )
         elif cfg.evaluation.dataloader_name == 'TestDatasetTraverserNew':
             self._data_loader_test = TestDatasetTraverserNew(
-                self.test_dataset, c.eval_batch_size, seq_length, cfg.evaluation.subsample_rate
+                self.test_dataset, c.eval_batch_size, seq_length, cfg.evaluation.subsample_rate, cfg.evaluation.max_num_episodes,
             )
         else:
             raise ValueError(f'{cfg.evaluation.dataloader_name} is not recognized')
@@ -167,7 +167,7 @@ class Trainer:
             )
         elif cfg.inference.dataloader_name == 'TestDatasetTraverserNew':
             self._data_loader_inference = TestDatasetTraverserNew(
-                self.test_dataset, c.eval_batch_size, seq_length, cfg.inference.subsample_rate
+                self.test_dataset, c.eval_batch_size, seq_length, cfg.inference.subsample_rate, cfg.inference.max_num_episodes
             )
         else:
             raise ValueError(f'{cfg.inference.dataloader_name} is not recognized')
@@ -181,10 +181,7 @@ class Trainer:
         self.epoch = 0
         self.global_step = 0
 
-        self.diffusion = create_diffusion(
-            timestep_respacing="",
-            learn_sigma=False,
-        )  # default: 1000 steps, linear noise schedule
+        self.diffusion = create_diffusion(timestep_respacing="", learn_sigma=self._cfg.diffusion.learn_sigma)  # default: 1000 steps, linear noise schedule
 
     def run(self) -> None:
 
@@ -254,7 +251,7 @@ class Trainer:
         for _ in trange(num_steps, desc=f"Training", disable=self._rank > 0):
             self.global_step = self.global_step + 1
             batch = next(data_iterator).to(self._device)
-            loss, _ = self.call_model(model, batch)
+            loss, _, _, _ = self.call_model(model, batch)
             loss.backward()
             to_log = {"loss": loss.item()}
 
@@ -274,17 +271,21 @@ class Trainer:
         self.diffusion_model.eval()
         model = self.diffusion_model
         data_loader = self._data_loader_test
-        eval_loss, eval_loss_last_frame = 0.0, 0.0
+        eval_loss, eval_mse, eval_mse_last_frame, eval_vb = 0.0, 0.0, 0.0, 0.0
         for batch in tqdm(data_loader, desc="Evaluating"):
             batch = batch.to(self._device)
-            loss, loss_last_frame = self.call_model(model, batch)
+            loss, mse, mse_last_frame, vb = self.call_model(model, batch)
             eval_loss += loss.item()
-            eval_loss_last_frame += loss_last_frame.item()
+            eval_mse += mse.item()
+            eval_mse_last_frame += mse_last_frame.item()
+            eval_vb += vb.item() if vb is not None else 0.0
 
-        eval_loss = eval_loss / len(data_loader)
-        eval_loss_last_frame = eval_loss_last_frame / len(data_loader)
-        to_log = {"loss": eval_loss, 'loss_last_frame': eval_loss_last_frame}
-
+        to_log = {
+            "loss": eval_loss / len(data_loader),
+            'mse': eval_mse / len(data_loader),
+            'mse_last_frame': eval_mse_last_frame / len(data_loader),
+            'vb': eval_vb / len(data_loader),
+        }
         to_log = {f"test/{k}": v for k, v in to_log.items()}
         if self._cfg.wandb.do_log:
             wandb_log(to_log, self.epoch, self.global_step)
@@ -294,7 +295,7 @@ class Trainer:
         self.diffusion_model.eval()
         model = self.diffusion_model
         data_loader = self._data_loader_inference
-        diffusion = create_diffusion(str(self._cfg.inference.num_sampling_steps), learn_sigma=False)
+        diffusion = create_diffusion(str(self._cfg.inference.num_sampling_steps), learn_sigma=self._cfg.diffusion.learn_sigma)
 
         all_decoded_samples = []
         all_prev_acts = []
@@ -324,7 +325,10 @@ class Trainer:
 
             if self._cfg.wandb.do_log and sample_i < self._cfg.inference.num_log_wandb:
                 act_names = [["TURN_LEFT", "TURN_RIGHT", "MOVE_FORWARD", "MOVE_LEFT", "MOVE_RIGHT", "NOOP"][act] for act in acts]
-                wandb.log({f'inference_img_{sample_i}': wandb.Image(image, caption=', '.join(act_names)), "epoch": self.epoch}, step=self.global_step)
+                try:
+                    wandb.log({f'inference_img_{sample_i}': wandb.Image(image, caption=', '.join(act_names)), "epoch": self.epoch}, step=self.global_step)
+                except:
+                    pass
 
         del all_decoded_samples
 
@@ -350,5 +354,7 @@ class Trainer:
             raise ValueError(f'{type(model)} is not recognized')
 
         loss = loss_dict["loss"].mean()
-        loss_last_frame = loss_dict['loss'].mean()
-        return loss, loss_last_frame
+        mse = loss_dict['mse'].mean()
+        mse_last_frame = loss_dict['mse_last_frame'].mean()
+        vb = loss_dict['vb'].mean() if 'vb' in loss_dict else None
+        return loss, mse, mse_last_frame, vb

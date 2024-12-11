@@ -120,7 +120,10 @@ def set_seed(seed: int) -> None:
 
 
 def wandb_log(log: dict[str, float], epoch: int, global_step: int) -> None:
-    wandb.log({"epoch": epoch, **log}, step=global_step)
+    try:
+        wandb.log({"epoch": epoch, **log}, step=global_step)
+    except:
+        pass
 
 
 def download_model_weights(url: str, save_path: str, device: torch.device):

@@ -143,19 +143,20 @@ class TestDatasetTraverser:
 class TestDatasetTraverserNew:
 
     def __init__(
-        self, dataset: Dataset, batch_num_samples: int, seq_length: int, subsample_rate: int,
+        self, dataset: Dataset, batch_num_samples: int, seq_length: int, subsample_rate: int, max_num_episodes: int
     ) -> None:
         self.dataset = dataset
         self.batch_num_samples = batch_num_samples
         self.seq_length = seq_length
         self.subsample_rate = subsample_rate
+        self.max_num_episodes = max_num_episodes
 
     def __len__(self):
         return math.ceil(
             sum(
                 [
                     len(range(0, self.dataset.lengths[episode_id] - self.seq_length + 1, self.subsample_rate))
-                    for episode_id in range(self.dataset.num_episodes)
+                    for episode_id in range(min(self.dataset.num_episodes, self.max_num_episodes))
                 ]
             )
             / self.batch_num_samples
@@ -163,7 +164,7 @@ class TestDatasetTraverserNew:
 
     def __iter__(self) -> Generator[Batch, None, None]:
         chunks = []
-        for episode_id in range(self.dataset.num_episodes):
+        for episode_id in range(min(self.dataset.num_episodes, self.max_num_episodes)):
             episode = self.dataset.load_episode(episode_id)
             for start in range(0, len(episode) - self.seq_length + 1, self.subsample_rate):
                 stop = start + self.seq_length

@@ -28,3 +28,5 @@ depre/
 sbatch_files/
 # georgy
 .local/
+
+pretrained_ditxl/

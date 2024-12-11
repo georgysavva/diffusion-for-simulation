@@ -26,7 +26,6 @@ from tqdm import tqdm
 
 from src.utils import normalize_img, prepare_image_obs
 
-wandb.login(key='faf21d9ff65ee150697c7e96f070616f6b662134', relogin=True)
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 logger = get_logger(__name__, log_level="INFO")
