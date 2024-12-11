@@ -130,6 +130,7 @@ if __name__ == "__main__":
         "--take_first_n_steps",
         type=int,
         help="Number of first frames in the episode to generate the trajectory for.",
+        default=100,
     )
     parser.add_argument("--device", type=str, help="Device to run the evaluation on.")
     parser.add_argument(
