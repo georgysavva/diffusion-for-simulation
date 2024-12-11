@@ -30,9 +30,24 @@ def main(args):
         str(args.num_sampling_steps), learn_sigma=run_config.diffusion.learn_sigma
     )
     diffusion_model = instantiate(run_config.diffusion_model.model).to(device)
+    if args.model_version == "latest":
+        model_versions = sorted(
+            os.listdir(run_dir / "diffusion_model_versions"), reverse=True
+        )
+        if len(model_versions) == 0:
+            raise ValueError("No model versions found.")
+        elif len(model_versions) == 1:
+            model_version = model_versions[0]
+        else:
+            model_version = model_versions[
+                1
+            ]  # Prefer the second latest model because the most latest if a temp one
+    else:
+        model_version = args.model_version
+    print("Using model version:", model_version)
     diffusion_model.load_state_dict(
         torch.load(
-            run_dir / "diffusion_model_versions" / args.model_version,
+            run_dir / "diffusion_model_versions" / model_version,
             map_location=device,
             weights_only=True,
         )
@@ -58,10 +73,7 @@ def main(args):
         device=device,
     )
     output_dir = (
-        run_dir
-        / "trajectory_evaluation"
-        / args.model_version.split(".")[0]
-        / episode_name
+        run_dir / "trajectory_evaluation" / model_version.split(".")[0] / episode_name
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     for generation_mode in ["teacher_forcing"]:
@@ -88,7 +100,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_version",
         type=str,
-        required=True,
+        default="latest",
         help="Name of the checkpoint file.",
     )
     parser.add_argument(
@@ -101,7 +113,7 @@ if __name__ == "__main__":
         "--episode_path",
         type=str,
         help="Path to the episode data.",
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_11.pt",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_0.pt",
     )
     parser.add_argument(
         "--num_seed_steps", type=int, help="Number of seed steps.", default=8
@@ -123,7 +135,7 @@ if __name__ == "__main__":
         "--sampling_algorithm",
         type=str,
         choices=["DDIM", "DDPM"],
-        default="DDPM",
+        default="DDIM",
         help="Sampling algorithm to use for diffusion.",
     )
     args = parser.parse_args()

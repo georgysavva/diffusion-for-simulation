@@ -49,7 +49,7 @@ evaluation:
   every: 1
 
 inference:
-  should: False
+  should: True
   every: 20
   episode_path: ${env.data_path}/original/test/episode_0.pt
   take_n_first_frames: 100
