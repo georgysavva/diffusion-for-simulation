@@ -58,7 +58,8 @@ def main(args):
     episode.obs = prepare_image_obs(
         episode.obs, run_config.static_dataset.image_resolution
     )
-
+    if args.take_first_n_steps is not None:
+        episode = episode.slice(0, args.take_first_n_steps)
     evaluator = TrajectoryEvaluator(
         diffusion=diffusion,
         vae=vae,
@@ -109,6 +110,7 @@ if __name__ == "__main__":
         help="Path to the VAE model.",
         default="/scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth",
     )
+
     parser.add_argument(
         "--episode_path",
         type=str,
@@ -123,6 +125,11 @@ if __name__ == "__main__":
         type=int,
         help="Number of diffusion sampling steps.",
         default=8,
+    )
+    parser.add_argument(
+        "--take_first_n_steps",
+        type=int,
+        help="Number of first frames in the episode to generate the trajectory for.",
     )
     parser.add_argument("--device", type=str, help="Device to run the evaluation on.")
     parser.add_argument(
