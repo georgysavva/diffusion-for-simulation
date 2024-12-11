@@ -77,7 +77,7 @@ def main(args):
         run_dir / "trajectory_evaluation" / model_version.split(".")[0] / episode_name
     )
     output_dir.mkdir(parents=True, exist_ok=True)
-    for generation_mode in ["teacher_forcing"]:
+    for generation_mode in args.generation_modes:
         generated_trajectory = evaluator.evaluate_episode(
             diffusion_model, episode, generation_mode
         )
@@ -103,6 +103,13 @@ if __name__ == "__main__":
         type=str,
         default="latest",
         help="Name of the checkpoint file.",
+    )
+    parser.add_argument(
+        "--generation_modes",
+        type=str,
+        nargs='+',
+        default=["teacher_forcing"],
+        help="List of generation modes to evaluate.",
     )
     parser.add_argument(
         "--vae_decoder_path",
