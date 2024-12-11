@@ -1,9 +1,7 @@
 import os
-import shutil
 import time
 from functools import partial
 from pathlib import Path
-from copy import deepcopy
 
 import torch
 import torch.distributed as dist
@@ -24,7 +22,6 @@ from src.diffusion import create_diffusion
 from src.utils import (
     build_ddp_wrapper,
     count_parameters,
-    download_model_weights,
     get_lr_sched,
     keep_model_copies_every,
     set_seed,
@@ -324,6 +321,8 @@ class Trainer:
 
             if self._cfg.wandb.do_log and sample_i < self._cfg.inference.num_log_wandb:
                 wandb.log({f'inference_img_{sample_i}': wandb.Image(image), "epoch": self.epoch}, step=self.global_step)
+
+        del all_decoded_samples
 
     def save_checkpoint(self) -> None:
         if self._rank == 0:

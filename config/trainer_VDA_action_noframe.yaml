@@ -26,7 +26,7 @@ common:
 
 checkpointing:
   save_diffusion_model_every: 5
-  num_to_keep: 11  # number of checkpoints to keep, use null to disable
+  num_to_keep: null  # number of checkpoints to keep, use null to disable
 
 static_dataset:
   path: ${env.data_path}

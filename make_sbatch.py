@@ -25,7 +25,7 @@ singularity exec --nv \\
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--bash_files', type=str, nargs='+', help='bash file of commands', required=True)
-parser.add_argument('--gb', type=int, help='bash file of commands', default=32)
+parser.add_argument('--gb', type=int, help='bash file of commands', default=64)
 parser.add_argument('--ncpu', type=int, help='bash file of commands', default=8)
 parser.add_argument('--time', type=str, help='bash file of commands', required=True)
 parser.add_argument('--sbatch_dir', type=str, help='bash file of commands', default='/scratch/yl11330/diffusion-for-simulation/sbatch_files')
