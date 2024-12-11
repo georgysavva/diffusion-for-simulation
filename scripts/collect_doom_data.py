@@ -48,12 +48,12 @@ def collect_observations_only(env, num_episodes, save_path, skip_frames):
 
 
 # Collect episodes using a random policy
-def collect_episodes(env, num_episodes, start_episode_id, save_path, repeat_action):
+def collect_episodes(env, num_episodes, save_path, repeat_action):
     os.makedirs(save_path, exist_ok=True)
     video_path = os.path.join(save_path, "videos")
     os.makedirs(video_path, exist_ok=True)
     episodes_info = {"episodes_num": 0, "episodes": []}
-    for episode in tqdm(range(start_episode_id, start_episode_id+ num_episodes), desc="Sampling episodes"):
+    for episode in tqdm(range( num_episodes), desc="Sampling episodes"):
         episode_data = {"observations": [], "actions": [], "rewards": []}
         observation, _ = env.reset()
         done = False
@@ -138,7 +138,6 @@ if __name__ == "__main__":
     parser.add_argument("--observations_only", action='store_true', help='whether to only save observations')
     parser.add_argument("--skip_frames", type=int, default=1, help='number of frames between each saved one (only for observations_only)')
     parser.add_argument("--repeat_action", type=int, default=10, help='number of frames between each repeat the same actions (only for full episodes)')
-    parser.add_argument("--start_episode_id", type=int, default=0, help='the id of the first episode (only for full episodes)')
     args = parser.parse_args()
 
     env_id = (
@@ -151,7 +150,7 @@ if __name__ == "__main__":
     env = gym.make(env_id)
     try:
         if not args.observations_only:
-            collect_episodes(env, num_episodes, args.start_episode_id, save_path, args.repeat_action)
+            collect_episodes(env, num_episodes,  save_path, args.repeat_action)
         else:
             collect_observations_only(env, num_episodes, save_path, args.skip_frames)
     finally:
