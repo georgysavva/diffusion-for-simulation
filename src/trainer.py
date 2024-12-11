@@ -1,11 +1,11 @@
 import os
-import shutil
 import time
 from functools import partial
 from pathlib import Path
 
 import torch
 import torch.distributed as dist
+from diffusers import AutoencoderKL
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
@@ -18,14 +18,19 @@ from src.data import (
     TestDatasetTraverser,
     collate_segments_to_batch,
 )
+from src.data.episode import Episode
 from src.diffusion import create_diffusion
+from src.traj_eval import TrajectoryEvaluator
 from src.utils import (
     build_ddp_wrapper,
     count_parameters,
     download_model_weights,
     get_lr_sched,
     keep_model_copies_every,
+    prepare_image_obs,
+    save_np_video,
     set_seed,
+    to_numpy_video,
     wandb_log,
 )
 
@@ -63,11 +68,12 @@ class Trainer:
             )
 
         # Checkpointing
-
+        self.run_dir = Path(cfg.common.run_dir)
+        print("Run dir:", self.run_dir)
         self._keep_model_copies = partial(
             keep_model_copies_every,
             every=cfg.checkpointing.save_diffusion_model_every,
-            path_ckpt_dir=Path(cfg.common.run_dir),
+            path_ckpt_dir=self.run_dir,
             num_to_keep=cfg.checkpointing.num_to_keep,
         )
 
@@ -75,9 +81,14 @@ class Trainer:
         p = Path(cfg.static_dataset.path)
         self.train_dataset = Dataset(
             p / "train",
+            guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
             cache_in_ram=False,
         )
-        self.test_dataset = Dataset(p / "test", cache_in_ram=True)
+        self.test_dataset = Dataset(
+            p / "test",
+            cfg.static_dataset.guarantee_full_seqs,
+            cache_in_ram=True,
+        )
 
         # Create models
         if self._rank == 0:
@@ -116,8 +127,14 @@ class Trainer:
 
         # Optimizers and LR schedulers
 
+        optim_cfg = cfg.diffusion_model.training.optimizer
         self.opt = torch.optim.AdamW(
-            self.diffusion_model.parameters(), **cfg.diffusion_model.training.optimizer
+            self.diffusion_model.parameters(),
+            lr=(
+                optim_cfg.base_lr * cfg.diffusion_model.training.train_batch_size
+                if optim_cfg.scale_lr
+                else optim_cfg.base_lr
+            ),
         )
 
         self.lr_sched = get_lr_sched(
@@ -133,8 +150,9 @@ class Trainer:
             self.train_dataset,
             self._rank,
             self._world_size,
-            c.batch_size,
+            c.train_batch_size,
             seq_length,
+            guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
         )
 
         self._data_loader_train = DataLoader(
@@ -148,7 +166,10 @@ class Trainer:
         )
 
         self._data_loader_test = TestDatasetTraverser(
-            self.test_dataset, c.batch_size, seq_length
+            self.test_dataset,
+            c.eval_batch_size,
+            seq_length,
+            cfg.evaluation.subsample_rate,
         )
 
         # Training state (things to be saved/restored)
@@ -156,9 +177,45 @@ class Trainer:
         self.global_step = 0
 
         self.diffusion = create_diffusion(
-            timestep_respacing="",
+            timestep_respacing=str(cfg.diffusion.num_sampling_steps),
             learn_sigma=cfg.diffusion.learn_sigma,
         )  # default: 1000 steps, linear noise schedule
+        self._setup_inference(cfg)
+
+    def _setup_inference(self, cfg: DictConfig) -> None:
+        vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(
+            self._device
+        )
+        vae.decoder.load_state_dict(
+            torch.load(
+                cfg.inference.vae_path, weights_only=True, map_location=self._device
+            )
+        )
+        vae.eval()
+        episode_path = Path(cfg.inference.episode_path)
+        episode = Episode.load(episode_path)
+        episode.obs = prepare_image_obs(
+            episode.obs, cfg.static_dataset.image_resolution
+        )
+        if "take_n_first_frames" in cfg.inference:
+            episode = episode.slice(0, cfg.inference.take_n_first_frames)
+
+        self.inference_episode = episode
+        self.inference_episode_name = os.path.splitext(episode_path.name)[0]
+
+        self.trajectory_evaluator = TrajectoryEvaluator(
+            diffusion=self.diffusion,
+            vae=vae,
+            num_seed_steps=(
+                cfg.diffusion_model.model.num_conditioning_steps
+                if cfg.static_dataset.guarantee_full_seqs
+                else cfg.inference.num_seed_steps
+            ),
+            num_conditioning_steps=cfg.diffusion_model.model.num_conditioning_steps,
+            sampling_algorithm=cfg.inference.sampling_algorithm,
+            vae_batch_size=cfg.inference.vae_batch_size,
+            device=self._device,
+        )
 
     def run(self) -> None:
 
@@ -184,6 +241,16 @@ class Trainer:
             if should_test:
                 self.test_diffusion_model()
 
+            # Inference
+            should_inference = (
+                self._rank == 0
+                and self._cfg.inference.should
+                and (self.epoch % self._cfg.inference.every == 0)
+            )
+
+            if should_inference:
+                self.inference_diffusion_model()
+
             # Logging
             if self._rank == 0:
                 wandb_log(
@@ -197,6 +264,10 @@ class Trainer:
 
             if dist.is_initialized():
                 dist.barrier()
+
+            # if not training, no need to repeatedly eval or inference
+            if not self._cfg.training.should:
+                break
 
     def train_diffusion_model(self):
         self.diffusion_model.train()
@@ -244,6 +315,33 @@ class Trainer:
 
         to_log = {f"test/{k}": v for k, v in to_log.items()}
         wandb_log(to_log, self.epoch, self.global_step)
+
+    @torch.no_grad()
+    def inference_diffusion_model(self):
+        self.diffusion_model.eval()
+        output_dir = (
+            self.run_dir
+            / "trajectory_evaluation"
+            / f"diffusion_model_epoch_{self.epoch:05d}"
+            / self.inference_episode_name
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for generation_mode in self._cfg.inference.generation_mode:
+            generated_trajectory = self.trajectory_evaluator.evaluate_episode(
+                self.diffusion_model, self.inference_episode, generation_mode
+            )
+            save_np_video(
+                generated_trajectory,
+                output_dir
+                / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.mp4",
+                fps=self._cfg.env.fps,
+            )
+        ground_truth_trajectory = to_numpy_video(self.inference_episode.obs)
+        save_np_video(
+            ground_truth_trajectory,
+            output_dir / "ground_truth.mp4",
+            fps=self._cfg.env.fps,
+        )
 
     def save_checkpoint(self) -> None:
         if self._rank == 0:

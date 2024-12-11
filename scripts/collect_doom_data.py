@@ -71,7 +71,7 @@ def collect_episodes(env, num_episodes, save_path):
             # Random action
             action = env.action_space.sample()
 
-            out.write(observation["screen"])
+            out.write(cv2.cvtColor(observation["screen"], cv2.COLOR_RGB2BGR))
 
             # Step environment
             (

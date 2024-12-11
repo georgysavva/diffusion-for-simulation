@@ -1,9 +1,9 @@
 model:
-  _target_: src.models.DiT.DiT
+  _target_: src.models.VDT.VDT
   num_actions: ${env.num_actions}
-  num_conditioning_steps: 8
+  num_conditioning_steps: 4
   input_size: 32
-  patch_size: 4
+  patch_size: 2
   in_channels: 4
   hidden_size: 1152
   depth: 28
@@ -11,11 +11,15 @@ model:
   mlp_ratio: 4.0
   time_frequency_embedding_size: 256
   learn_sigma: ${diffusion.learn_sigma}
+  condition_on_actions: False
+  condition_on_obs: True
+
+
 
 
 training:
-  train_batch_size: 128
-  eval_batch_size: 128
+  train_batch_size: 32
+  eval_batch_size: 32
   steps_per_epoch: 500
   num_epochs: 1000000
   lr_warmup_steps: 100

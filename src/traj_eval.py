@@ -37,7 +37,7 @@ class TrajectoryEvaluator:
 
     @torch.no_grad()
     def evaluate_episode(
-        self, model, episode: Episode, auto_regressive: bool = False
+        self, model, episode: Episode, generation_mode: str
     ) -> np.ndarray:
         model.eval()
         self._vae.eval()
@@ -61,7 +61,8 @@ class TrajectoryEvaluator:
             device=self._device,
         )
         for step in tqdm(
-            range(self._num_seed_steps, len(episode)), desc="Generating trajectory"
+            range(self._num_seed_steps, len(episode)),
+            desc="Inference/Generating trajectory",
         ):
             z = torch.randn(1, *latent_shape, device=self._device)
             model_kwargs = dict(
@@ -80,10 +81,15 @@ class TrajectoryEvaluator:
                 prev_act = torch.roll(prev_act, -1, 0)
                 prev_act[-1] = act[step]
                 prev_obs = torch.roll(prev_obs, -1, 0)
-                if auto_regressive:
+                if generation_mode == "auto_regressive":
                     prev_obs[-1] = generated_obs
-                else:
+                elif generation_mode == "teacher_forcing":
                     prev_obs[-1] = obs_latent[step]
+                else:
+                    raise ValueError(
+                        f"Unknown generation mode: {generation_mode}. "
+                        "Choose from ['auto_regressive', 'teacher_forcing']."
+                    )
             generated_trajectory_latent[step - self._num_seed_steps] = generated_obs
         generated_trajectory_img_norm = self._run_decode_on_episode(
             generated_trajectory_latent
@@ -112,7 +118,8 @@ class TrajectoryEvaluator:
     def _run_encode_on_episode(self, obs_img_norm) -> torch.Tensor:
         obs_latent = []
         for i in tqdm(
-            range(0, len(obs_img_norm), self._vae_batch_size), desc="Vae encoding"
+            range(0, len(obs_img_norm), self._vae_batch_size),
+            desc="Inference/Vae encoding",
         ):
             batch = obs_img_norm[i : i + self._vae_batch_size]
             obs_latent.append(
@@ -124,7 +131,8 @@ class TrajectoryEvaluator:
     def _run_decode_on_episode(self, obs_latent) -> torch.Tensor:
         obs_img_norm = []
         for i in tqdm(
-            range(0, len(obs_latent), self._vae_batch_size), desc="Vae decoding"
+            range(0, len(obs_latent), self._vae_batch_size),
+            desc="Inference/Vae decoding",
         ):
             batch = obs_latent[i : i + self._vae_batch_size]
             obs_img_norm.append(self._vae.decode(batch / 0.18215).sample.clamp(-1, 1))

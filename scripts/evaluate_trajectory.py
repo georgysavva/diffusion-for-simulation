@@ -30,9 +30,24 @@ def main(args):
         str(args.num_sampling_steps), learn_sigma=run_config.diffusion.learn_sigma
     )
     diffusion_model = instantiate(run_config.diffusion_model.model).to(device)
+    if args.model_version == "latest":
+        model_versions = sorted(
+            os.listdir(run_dir / "diffusion_model_versions"), reverse=True
+        )
+        if len(model_versions) == 0:
+            raise ValueError("No model versions found.")
+        elif len(model_versions) == 1:
+            model_version = model_versions[0]
+        else:
+            model_version = model_versions[
+                1
+            ]  # Prefer the second latest model because the most latest if a temp one
+    else:
+        model_version = args.model_version
+    print("Using model version:", model_version)
     diffusion_model.load_state_dict(
         torch.load(
-            run_dir / "diffusion_model_versions" / args.model_version,
+            run_dir / "diffusion_model_versions" / model_version,
             map_location=device,
             weights_only=True,
         )
@@ -40,41 +55,44 @@ def main(args):
 
     episode = Episode.load(args.episode_path)
     episode_name = os.path.splitext(os.path.basename(args.episode_path))[0]
-    episode.obs = prepare_image_obs(episode.obs, args.img_resolution)
-
+    episode.obs = prepare_image_obs(
+        episode.obs, run_config.static_dataset.image_resolution
+    )
+    if args.take_first_n_steps is not None:
+        episode = episode.slice(0, args.take_first_n_steps)
     evaluator = TrajectoryEvaluator(
         diffusion=diffusion,
         vae=vae,
-        num_seed_steps=args.num_seed_steps,
+        num_seed_steps=(
+            run_config.diffusion_model.model.num_conditioning_steps
+            if run_config.static_dataset.guarantee_full_seqs
+            else args.num_seed_steps
+        ),
         num_conditioning_steps=run_config.diffusion_model.model.num_conditioning_steps,
         sampling_algorithm=args.sampling_algorithm,
         vae_batch_size=args.vae_batch_size,
         device=device,
     )
-    output_dir = run_dir / "trajectory_evaluation" / args.model_version / episode_name
+    output_dir = (
+        run_dir / "trajectory_evaluation" / model_version.split(".")[0] / episode_name
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
-    for auto_regressive in [False]:
+    for generation_mode in ["teacher_forcing"]:
         generated_trajectory = evaluator.evaluate_episode(
-            diffusion_model, episode, auto_regressive
-        )
-        auto_regressive_tag = (
-            "auto_regressive" if auto_regressive else "teacher_forcing"
+            diffusion_model, episode, generation_mode
         )
         save_np_video(
             generated_trajectory,
-            output_dir
-            / f"generated_{auto_regressive_tag}_{args.sampling_algorithm}.mp4",
-            args.fps,
+            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
+            run_config.env.fps,
         )
 
     ground_truth_trajectory = to_numpy_video(episode.obs)
     save_np_video(
         ground_truth_trajectory,
         output_dir / f"ground_truth.mp4",
-        args.fps,
+        run_config.env.fps,
     )
-    vae_video = evaluator.run_vae_on_episode(episode)
-    save_np_video(vae_video, output_dir / f"vae_reconstruction.mp4", args.fps)
 
 
 if __name__ == "__main__":
@@ -83,7 +101,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_version",
         type=str,
-        required=True,
+        default="latest",
         help="Name of the checkpoint file.",
     )
     parser.add_argument(
@@ -92,11 +110,12 @@ if __name__ == "__main__":
         help="Path to the VAE model.",
         default="/scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth",
     )
+
     parser.add_argument(
         "--episode_path",
         type=str,
         help="Path to the episode data.",
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_11.pt",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_0.pt",
     )
     parser.add_argument(
         "--num_seed_steps", type=int, help="Number of seed steps.", default=8
@@ -108,10 +127,10 @@ if __name__ == "__main__":
         default=8,
     )
     parser.add_argument(
-        "--fps", type=int, help="Trajectory frames per second.", default=35
-    )
-    parser.add_argument(
-        "--img_resolution", type=int, help="Resolution of the images.", default=256
+        "--take_first_n_steps",
+        type=int,
+        help="Number of first frames in the episode to generate the trajectory for.",
+        default=100,
     )
     parser.add_argument("--device", type=str, help="Device to run the evaluation on.")
     parser.add_argument(
@@ -124,7 +143,7 @@ if __name__ == "__main__":
         "--sampling_algorithm",
         type=str,
         choices=["DDIM", "DDPM"],
-        default="DDPM",
+        default="DDIM",
         help="Sampling algorithm to use for diffusion.",
     )
     args = parser.parse_args()
