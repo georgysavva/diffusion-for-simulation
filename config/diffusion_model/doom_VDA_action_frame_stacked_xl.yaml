@@ -1,7 +1,7 @@
 model:
   _target_: src.models.VDA.VDA
   num_actions: ${env.num_actions}
-  num_conditioning_steps: 3
+  num_conditioning_steps: 7
   input_size: 32
   patch_size: 2
   in_channels: 4
@@ -11,15 +11,14 @@ model:
   mlp_ratio: 4.0
   time_frequency_embedding_size: 256
   use_frame_embedding: True
-  use_action_embedding: False
+  use_action_embedding: True
   learn_sigma: ${diffusion.learn_sigma}
-
+  stacked: True
 
 training:
-  train_batch_size: 16
-  eval_batch_size: 16
+  train_batch_size: 32
+  eval_batch_size: 32
   steps_per_epoch: 1000
-  # steps_per_epoch: 1
   num_epochs: 1000000
   lr_warmup_steps: 100
 

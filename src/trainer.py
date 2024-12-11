@@ -39,6 +39,14 @@ class Trainer:
     def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         OmegaConf.resolve(cfg)
+
+        if cfg.debug:
+            cfg.diffusion_model.training.steps_per_epoch = 10
+            cfg.evaluation.subsample_rate = 100000
+            cfg.inference.num_sampling_steps = 5
+            cfg.evaluation.max_num_episodes = 64
+            cfg.inference.max_num_episodes = 64
+
         self._cfg = cfg
         self._rank = dist.get_rank() if dist.is_initialized() else 0
         self._world_size = dist.get_world_size() if dist.is_initialized() else 1

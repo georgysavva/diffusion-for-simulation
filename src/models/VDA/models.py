@@ -1,6 +1,5 @@
 import math
 
-import einops
 import numpy as np
 import torch
 import torch.nn as nn
@@ -143,15 +142,17 @@ class VDA(nn.Module):
         use_frame_embedding,
         use_action_embedding,
         learn_sigma,
+        stacked,
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
-        self.in_channels = in_channels
-        self.out_channels = in_channels * 2 if learn_sigma else in_channels
+        self.stacked = stacked
+        self.in_channels = in_channels * (num_conditioning_steps + 1) if stacked else in_channels
+        self.out_channels = self.in_channels * 2 if learn_sigma else self.in_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
 
-        self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
+        self.x_embedder = PatchEmbed(input_size, patch_size, self.in_channels, hidden_size, bias=True)
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
 
         self.frame_embedder, self.action_embedder = None, None
@@ -179,13 +180,19 @@ class VDA(nn.Module):
         print('parameters not in loaded:', not_in_loaded)
         print('parameters not in model:', not_in_model)
 
+        allowed_different_weights = ['x_embedder.proj.weight', 'final_layer.linear.weight', 'final_layer.linear.bias']
         for n, p in self.named_parameters():
             if n in loaded_weights:
-                assert p.shape == loaded_weights[n].shape, n
-                requires_grad = p.requires_grad
-                p.requires_grad = False
-                p.copy_(loaded_weights[n])
-                p.requires_grad = requires_grad
+                if p.shape != loaded_weights[n].shape:
+                    if n not in allowed_different_weights:
+                        raise ValueError(f'{n} has wrong shape')
+                    else:
+                        print(f'skipped weight loading for {n}')
+                else:
+                    requires_grad = p.requires_grad
+                    p.requires_grad = False
+                    p.copy_(loaded_weights[n])
+                    p.requires_grad = requires_grad
 
         print('done loading pretrained weights from', pretrained_weights_path)
 
@@ -253,21 +260,24 @@ class VDA(nn.Module):
         batch_size, num_frame, _, _, _ = x.shape
         assert tuple(prev_act.shape) == (batch_size, num_frame - 1)
 
-        # TODO: parallelize this, idk how tho
-        xs = []
-        for frame_i in range(num_frame):
-            x_emb = self.x_embedder(x[:, frame_i]) + self.pos_embed # (N, T, D)
-            # action embedding
-            if self.action_embedder is not None and frame_i < num_frame - 1:
-                action_emb = self.action_embedder(prev_act[:, frame_i]) # (N, D)
-                x_emb += action_emb[:, None, :]
-            # frame embedding
-            if self.frame_embedder is not None:
-                frame_emb = self.frame_embedder(torch.tensor(frame_i, device=x.device)) # (D,)
-                x_emb += frame_emb[None, None, ...]
-            xs.append(x_emb)
-        num_patch_per_frame = x_emb.shape[1]
-        x = torch.concat(xs, dim=1)
+        if self.stacked:
+            x = x.flatten(start_dim=1, end_dim=2)
+            x = self.x_embedder(x) + self.pos_embed
+        else:
+            xs = []
+            for frame_i in range(num_frame):
+                x_emb = self.x_embedder(x[:, frame_i]) + self.pos_embed # (N, T, D)
+                # action embedding
+                if self.action_embedder is not None and frame_i < num_frame - 1:
+                    action_emb = self.action_embedder(prev_act[:, frame_i]) # (N, D)
+                    x_emb += action_emb[:, None, :]
+                # frame embedding
+                if self.frame_embedder is not None:
+                    frame_emb = self.frame_embedder(torch.tensor(frame_i, device=x.device)) # (D,)
+                    x_emb += frame_emb[None, None, ...]
+                xs.append(x_emb)
+            num_patch_per_frame = x_emb.shape[1]
+            x = torch.concat(xs, dim=1)
 
         # (N, T, D), where T = H * W / patch_size ** 2
         t = self.t_embedder(t)                   # (N, D)
@@ -276,13 +286,17 @@ class VDA(nn.Module):
 
         x = self.final_layer(x, t)                # (N, T, patch_size ** 2 * out_channels)
 
-        # TODO: parallelize this, idk how tho
-        x_split = torch.split(x, num_patch_per_frame, dim=1)
-        xs = []
-        for x in x_split:
-            x = self.unpatchify(x) # (N, out_channels, H, W)
-            xs.append(x)
-        x = torch.stack(xs, dim=1)
+        if self.stacked:
+            x = self.unpatchify(x)
+            x = x.view(x.shape[0], num_frame, x.shape[1] // num_frame, *x.shape[2:])
+        else:
+            x_split = torch.split(x, num_patch_per_frame, dim=1)
+            xs = []
+            for x in x_split:
+                x = self.unpatchify(x) # (N, out_channels, H, W)
+                xs.append(x)
+            x = torch.stack(xs, dim=1) # (N, num_frames, out_channels, H, W)
+
         return x
 
     @property

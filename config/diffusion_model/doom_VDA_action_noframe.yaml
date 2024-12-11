@@ -13,13 +13,12 @@ model:
   use_frame_embedding: False
   use_action_embedding: True
   learn_sigma: ${diffusion.learn_sigma}
-
+  stacked: False
 
 training:
   train_batch_size: 128
   eval_batch_size: 128
   steps_per_epoch: 1000
-  # steps_per_epoch: 1
   num_epochs: 1000000
   lr_warmup_steps: 100
 
