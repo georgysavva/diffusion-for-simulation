@@ -297,6 +297,7 @@ class Trainer:
         diffusion = create_diffusion(str(self._cfg.inference.num_sampling_steps), learn_sigma=False)
 
         all_decoded_samples = []
+        all_prev_acts = []
         for batch in tqdm(data_loader, desc="Inferencing"):
             prev_act = batch.act[:, :-1].to(self._device)
             z = torch.randn_like(batch.obs, device=self._device)
@@ -309,18 +310,21 @@ class Trainer:
             decoded_samples = torch.stack(decoded_samples, dim=1) # (N, seqlen, 3, 256, 256) in [-1, 1]
             decoded_samples = ((decoded_samples * 0.5 + 0.5) * 255.0).clamp(0, 255).byte()
             all_decoded_samples.append(decoded_samples.cpu())
+            all_prev_acts.append(prev_act)
         all_decoded_samples = torch.cat(all_decoded_samples, dim=0)
+        all_prev_acts = torch.cat(all_prev_acts, dim=0)
 
         sample_dir = os.path.join(self._cfg.common.run_dir, f'inference_epoch_{self.epoch}')
         os.makedirs(sample_dir, exist_ok=True)
         print('saving inference results to', sample_dir)
-        for sample_i, sample in enumerate(all_decoded_samples):
+        for sample_i, (sample, acts) in enumerate(zip(all_decoded_samples, all_prev_acts)):
             grid = make_grid(sample, nrow=sample.shape[0], padding=2)
             image = Image.fromarray(grid.permute(1, 2, 0).cpu().numpy())
             image.save(os.path.join(sample_dir, f'{sample_i}.jpg'))
 
             if self._cfg.wandb.do_log and sample_i < self._cfg.inference.num_log_wandb:
-                wandb.log({f'inference_img_{sample_i}': wandb.Image(image), "epoch": self.epoch}, step=self.global_step)
+                act_names = [["TURN_LEFT", "TURN_RIGHT", "MOVE_FORWARD", "MOVE_LEFT", "MOVE_RIGHT", "NOOP"][act] for act in acts]
+                wandb.log({f'inference_img_{sample_i}': wandb.Image(image, caption=', '.join(act_names)), "epoch": self.epoch}, step=self.global_step)
 
         del all_decoded_samples
 
