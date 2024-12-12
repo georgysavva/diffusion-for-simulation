@@ -11,7 +11,7 @@ model:
   mlp_ratio: 4.0
   time_frequency_embedding_size: 256
   learn_sigma: ${diffusion.learn_sigma}
-  condition_on_actions: False
+  condition_on_actions: True
   condition_on_obs: True
 
 
@@ -19,7 +19,7 @@ model:
 
 training:
   train_batch_size: 32
-  eval_batch_size: 32
+  eval_batch_size: 128
   steps_per_epoch: 500
   num_epochs: 1000000
   lr_warmup_steps: 100
