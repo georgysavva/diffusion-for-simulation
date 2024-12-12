@@ -67,7 +67,14 @@ class DiTBlock(nn.Module):
     """
 
     def __init__(
-        self, hidden_size, num_heads, mlp_ratio, enable_conditioning, **block_kwargs
+        self,
+        hidden_size,
+        num_heads,
+        mlp_ratio,
+        enable_conditioning,
+        condition_on_actions,
+        condition_on_obs,
+        **block_kwargs,
     ):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -87,20 +94,23 @@ class DiTBlock(nn.Module):
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
         self.enable_conditioning = enable_conditioning
+        self.condition_on_actions = condition_on_actions
+        self.condition_on_obs = condition_on_obs
         if enable_conditioning:
-            self.cross_obs_norm = nn.LayerNorm(
-                hidden_size, elementwise_affine=False, eps=1e-6
-            )
-            self.cross_attn_obs = nn.MultiheadAttention(
-                embed_dim=hidden_size, num_heads=num_heads, batch_first=True
-            )
-
-            self.cross_act_norm = nn.LayerNorm(
-                hidden_size, elementwise_affine=False, eps=1e-6
-            )
-            self.cross_attn_act = nn.MultiheadAttention(
-                embed_dim=hidden_size, num_heads=num_heads, batch_first=True
-            )
+            if self.condition_on_obs:
+                self.cross_obs_norm = nn.LayerNorm(
+                    hidden_size, elementwise_affine=False, eps=1e-6
+                )
+                self.cross_attn_obs = nn.MultiheadAttention(
+                    embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+                )
+            if self.condition_on_actions:
+                self.cross_act_norm = nn.LayerNorm(
+                    hidden_size, elementwise_affine=False, eps=1e-6
+                )
+                self.cross_attn_act = nn.MultiheadAttention(
+                    embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+                )
 
     def forward(self, x, t, prev_obs, prev_act):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
@@ -108,21 +118,23 @@ class DiTBlock(nn.Module):
         )
         if self.enable_conditioning:
             # Cross-Attention on prev_obs
-            obs_conditioned, _ = self.cross_attn_obs(
-                query=self.cross_obs_norm(x),  # (N, T, D)
-                key=prev_obs,  # (N, steps * T, D)
-                value=prev_obs,  # (N, steps * T, D)
-                need_weights=False,
-            )
-            x = x + obs_conditioned  # (N, T, D)
+            if self.condition_on_obs:
+                obs_conditioned, _ = self.cross_attn_obs(
+                    query=self.cross_obs_norm(x),  # (N, T, D)
+                    key=prev_obs,  # (N, steps * T, D)
+                    value=prev_obs,  # (N, steps * T, D)
+                    need_weights=False,
+                )
+                x = x + obs_conditioned  # (N, T, D)
             # Cross-Attention on prev_act
-            act_conditioned, _ = self.cross_attn_act(
-                query=self.cross_act_norm(x),  # (N, T, D)
-                key=prev_act,  # (N, steps, D)
-                value=prev_act,  # (N, steps, D)
-                need_weights=False,
-            )
-            x = x + act_conditioned  # (N, T, D)
+            if self.condition_on_actions:
+                act_conditioned, _ = self.cross_attn_act(
+                    query=self.cross_act_norm(x),  # (N, T, D)
+                    key=prev_act,  # (N, steps, D)
+                    value=prev_act,  # (N, steps, D)
+                    need_weights=False,
+                )
+                x = x + act_conditioned  # (N, T, D)
 
         x = x + gate_msa.unsqueeze(1) * self.attn(
             modulate(self.norm1(x), shift_msa, scale_msa)
@@ -182,13 +194,9 @@ class PreviousObservationEmbedder(nn.Module):
     Embeds previous observations into vector representations.
     """
 
-    def __init__(
-        self, num_conditioning_steps, image_size, patch_size, in_channels, hidden_size
-    ):
+    def __init__(self, patch_embed, num_conditioning_steps, hidden_size):
         super().__init__()
-        self.patch_embed = PatchEmbed(
-            image_size, patch_size, in_channels, hidden_size, bias=True
-        )
+        self.patch_embed = patch_embed
         self.num_patches = self.patch_embed.num_patches
         pos_embed = get_1d_sincos_pos_embed_from_grid(
             hidden_size,
@@ -240,6 +248,8 @@ class DiT(nn.Module):
         num_heads,
         mlp_ratio,
         time_frequency_embedding_size,
+        condition_on_actions,
+        condition_on_obs,
         learn_sigma,
     ):
         super().__init__()
@@ -248,19 +258,23 @@ class DiT(nn.Module):
         self.patch_size = patch_size
         self.num_heads = num_heads
 
-        self.noised_obs_embedder = PatchEmbed(
+        self.obs_embedder = PatchEmbed(
             input_size, patch_size, in_channels, hidden_size, bias=True
         )
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
         self.enable_conditioning = num_conditioning_steps > 0
+        self.condition_on_actions = condition_on_actions
+        self.condition_on_obs = condition_on_obs
         if self.enable_conditioning:
-            self.previous_obs_embedder = PreviousObservationEmbedder(
-                num_conditioning_steps, input_size, patch_size, in_channels, hidden_size
-            )
-            self.act_embedder = ActionEmbedder(
-                num_actions, num_conditioning_steps, hidden_size
-            )
-        num_patches = self.noised_obs_embedder.num_patches
+            if condition_on_obs:
+                self.previous_obs_embedder = PreviousObservationEmbedder(
+                    self.obs_embedder, num_conditioning_steps, hidden_size
+                )
+            if condition_on_actions:
+                self.act_embedder = ActionEmbedder(
+                    num_actions, num_conditioning_steps, hidden_size
+                )
+        num_patches = self.obs_embedder.num_patches
         # Will use fixed sin-cos embedding:
         self.noised_obs_pos_embed = nn.Parameter(
             torch.zeros(1, num_patches, hidden_size), requires_grad=False
@@ -272,6 +286,8 @@ class DiT(nn.Module):
                     num_heads,
                     mlp_ratio=mlp_ratio,
                     enable_conditioning=self.enable_conditioning,
+                    condition_on_actions=condition_on_actions,
+                    condition_on_obs=condition_on_obs,
                 )
                 for _ in range(depth)
             ]
@@ -282,8 +298,8 @@ class DiT(nn.Module):
     def load_pretrained_weights(self, weights):
         key_mapping = {
             "pos_embed": "noised_obs_pos_embed",
-            "x_embedder.proj.weight": "noised_obs_embedder.proj.weight",
-            "x_embedder.proj.bias": "noised_obs_embedder.proj.bias",
+            "x_embedder.proj.weight": "obs_embedder.proj.weight",
+            "x_embedder.proj.bias": "obs_embedder.proj.bias",
         }
         for map_from, map_to in key_mapping.items():
             if map_from in weights:
@@ -308,23 +324,21 @@ class DiT(nn.Module):
         # Initialize (and freeze) pos_embed by sin-cos embedding:
         noised_obs_pos_embed = get_2d_sincos_pos_embed(
             self.noised_obs_pos_embed.shape[-1],
-            int(self.noised_obs_embedder.num_patches**0.5),
+            int(self.obs_embedder.num_patches**0.5),
         )
         self.noised_obs_pos_embed.data.copy_(
             torch.from_numpy(noised_obs_pos_embed).float().unsqueeze(0)
         )
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
-        w = self.noised_obs_embedder.proj.weight.data
+        w = self.obs_embedder.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        nn.init.constant_(self.noised_obs_embedder.proj.bias, 0)
+        nn.init.constant_(self.obs_embedder.proj.bias, 0)
         if self.enable_conditioning:
-            w = self.previous_obs_embedder.patch_embed.proj.weight.data
-            nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-            nn.init.constant_(self.previous_obs_embedder.patch_embed.proj.bias, 0)
 
             # Initialize action embedding table:
-            nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
+            if self.condition_on_actions:
+                nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
@@ -347,7 +361,7 @@ class DiT(nn.Module):
         imgs: (N, H, W, C)
         """
         c = self.out_channels
-        p = self.noised_obs_embedder.patch_size[0]
+        p = self.obs_embedder.patch_size[0]
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
 
@@ -364,12 +378,18 @@ class DiT(nn.Module):
         y: (N,) tensor of class labels
         """
         noised_obs = (
-            self.noised_obs_embedder(noised_obs) + self.noised_obs_pos_embed
+            self.obs_embedder(noised_obs) + self.noised_obs_pos_embed
         )  # (N, T, D), where T = H * W / patch_size ** 2
         t = self.t_embedder(t)  # (N, D)
         if self.enable_conditioning:
-            prev_obs = self.previous_obs_embedder(prev_obs)  # (N, steps * T, D)
-            prev_act = self.act_embedder(prev_act)  # (N, steps, D)
+            if self.condition_on_obs:
+                prev_obs = self.previous_obs_embedder(prev_obs)  # (N, steps * T, D)
+            else:
+                prev_obs = None
+            if self.condition_on_actions:
+                prev_act = self.act_embedder(prev_act)  # (N, steps, D)
+            else:
+                prev_act = None
         else:
             prev_obs = prev_act = None
 
