@@ -12,11 +12,18 @@ from src.utils import normalize_img, prepare_image_obs
 
 
 # Main function
-def preprocess_data_with_vae(load_path, save_path, vae, resolution, batch_size):
+def preprocess_data_with_vae(load_path, save_path, vae, resolution, batch_size, div, mod):
     os.makedirs(save_path, exist_ok=True)
 
     episode_files = sorted(load_path.glob("episode_*.pt"))
-    for episode_file in tqdm(episode_files):
+    filtered_episode_files = []
+    for e in episode_files:
+        num = int(e.stem.split('_')[1])
+        if num % div == mod:
+            filtered_episode_files.append(e)
+    print(f'filtered {len(episode_files)} down to {len(filtered_episode_files)}')
+
+    for episode_file in tqdm(filtered_episode_files):
         episode = Episode.load(episode_file)
         obs = episode.obs
 
@@ -55,21 +62,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size", type=int, default=256, help="Batch size for inference"
     )
-    
+    parser.add_argument("--dataset_type", type=str, choices=['train', 'test'], help="Device to use for computation")
+    parser.add_argument("--div", type=int, default=10)
+    parser.add_argument("--mod", type=int, required=True)
+
+
     args = parser.parse_args()
     if args.device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device(args.device)
+
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema")
     vae.eval()
     vae.to(device)
-    for dataset_type in ["test", "train"]:
-        print(f"Preprocessing {dataset_type} data...")
-        data_path, save_path = Path(args.data_path), Path(args.save_path)
 
 
-        with torch.no_grad():
-            preprocess_data_with_vae(
-                data_path / dataset_type, save_path / dataset_type, vae,args.resolution, args.batch_size
-            )
+    print(f"Preprocessing {args.dataset_type} data...")
+    data_path, save_path = Path(args.data_path), Path(args.save_path)
+
+    with torch.no_grad():
+        preprocess_data_with_vae(
+            data_path / args.dataset_type, save_path / args.dataset_type, vae, args.resolution, args.batch_size, args.div, args.mod
+        )
