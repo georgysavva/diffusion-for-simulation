@@ -4,7 +4,6 @@ import os
 
 import cv2
 import gymnasium as gym
-import imageio
 import torch
 from tqdm import tqdm
 from vizdoom import gymnasium_wrapper  # to register envs
@@ -49,17 +48,17 @@ def collect_observations_only(env, num_episodes, save_path, skip_frames):
 
 
 # Collect episodes using a random policy
-def collect_episodes(env, num_episodes, save_path):
+def collect_episodes(env, num_episodes, save_path, repeat_action):
     os.makedirs(save_path, exist_ok=True)
     video_path = os.path.join(save_path, "videos")
     os.makedirs(video_path, exist_ok=True)
     episodes_info = {"episodes_num": 0, "episodes": []}
-    for episode in tqdm(range(num_episodes), desc="Sampling episodes"):
+    for episode in tqdm(range( num_episodes), desc="Sampling episodes"):
         episode_data = {"observations": [], "actions": [], "rewards": []}
         observation, _ = env.reset()
         done = False
         episode_reward = 0
-        video_filename = os.path.join(video_path, f"episode_{episode}.mp4")
+        video_filename =os.path.join(video_path, f"episode_{episode}.mp4")
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # Use 'XVID' for .avi files
         out = cv2.VideoWriter(
             video_filename,
@@ -67,9 +66,12 @@ def collect_episodes(env, num_episodes, save_path):
             35,
             (observation["screen"].shape[1], observation["screen"].shape[0]),
         )
+        action = None 
+        step = 0
         while not done:
             # Random action
-            action = env.action_space.sample()
+            if step % repeat_action == 0:
+                action = env.action_space.sample()
 
             out.write(cv2.cvtColor(observation["screen"], cv2.COLOR_RGB2BGR))
 
@@ -91,6 +93,7 @@ def collect_episodes(env, num_episodes, save_path):
 
             observation = next_observation
             done = terminated or truncated
+            step += 1
 
         episode_data["observations"] = torch.stack(episode_data["observations"])
         episode_data["actions"] = torch.tensor(episode_data["actions"])
@@ -107,7 +110,7 @@ def collect_episodes(env, num_episodes, save_path):
                 "episode_id": episode,
                 "length": len(episode_data["actions"]),
                 "return": episode_reward,
-                "source": "random_policy",
+                "source": f"random_policy_act_repeat_{repeat_action}",
             }
         )
         print(f"Episode {episode} video saved to {video_filename}")
@@ -125,15 +128,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/test",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original_act_repeat/train",
         help="Path to save the collected data",
     )
     parser.add_argument(
-        "--num_episodes", type=int, default=1, help="Number of episodes to sample"
+        "--num_episodes", type=int, default=2000, help="Number of episodes to sample"
     )
     # for jack to train vae:
     parser.add_argument("--observations_only", action='store_true', help='whether to only save observations')
     parser.add_argument("--skip_frames", type=int, default=1, help='number of frames between each saved one (only for observations_only)')
+    parser.add_argument("--repeat_action", type=int, default=10, help='number of frames between each repeat the same actions (only for full episodes)')
     args = parser.parse_args()
 
     env_id = (
@@ -146,7 +150,7 @@ if __name__ == "__main__":
     env = gym.make(env_id)
     try:
         if not args.observations_only:
-            collect_episodes(env, num_episodes, save_path)
+            collect_episodes(env, num_episodes,  save_path, args.repeat_action)
         else:
             collect_observations_only(env, num_episodes, save_path, args.skip_frames)
     finally:
