@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - env: doom
-  - diffusion_model: doom_VDA_action_noframe
+  - diffusion_model: doom_VDA_action_frame_short
 
 
 wandb:

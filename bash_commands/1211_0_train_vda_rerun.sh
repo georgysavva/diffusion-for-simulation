@@ -6,5 +6,5 @@ python src/main_action_frame.py experiment_name=vda_action_frame
 # noaction frame
 python src/main_noaction_frame.py experiment_name=vda_noaction_frame
 
-# Submitted batch job 54650378
-# Submitted batch job 54650381
+# Submitted batch job 54650378 action_frame <- very slightly better
+# Submitted batch job 54650381 noaction_frame <- remove

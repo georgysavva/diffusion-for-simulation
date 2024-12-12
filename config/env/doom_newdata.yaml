@@ -1,0 +1,5 @@
+id: doom
+num_actions: 6 # 5 buttons + 1 no-op
+data_path: ${common.project_storage_base_path}/data/doom/latent_act_repeat/
+image_resolution: 256
+fps: 35

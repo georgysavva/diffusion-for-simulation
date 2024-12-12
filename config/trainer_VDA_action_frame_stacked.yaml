@@ -27,7 +27,7 @@ common:
   run_dir: ${common.project_storage_base_path}/runs/${common.run_name}
 
 checkpointing:
-  save_diffusion_model_every: 5
+  save_diffusion_model_every: 1
   num_to_keep: null  # number of checkpoints to keep, use null to disable
 
 static_dataset:

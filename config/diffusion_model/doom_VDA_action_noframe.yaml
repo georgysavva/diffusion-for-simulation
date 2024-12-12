@@ -18,10 +18,11 @@ model:
 training:
   train_batch_size: 128
   eval_batch_size: 128
-  steps_per_epoch: 1000
+  steps_per_epoch: 2000
   num_epochs: 1000000
   lr_warmup_steps: 100
 
   optimizer:
-    base_lr: 3.90625e-7 # same scaling as dit
+    # base_lr: 3.90625e-7 # same scaling as dit
+    base_lr: 7.8125e-7 # double scaling of dit
     scale_lr: True

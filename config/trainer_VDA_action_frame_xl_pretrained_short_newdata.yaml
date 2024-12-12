@@ -1,7 +1,7 @@
 defaults:
   - _self_
-  - env: doom
-  - diffusion_model: doom_VDA_action_noframe
+  - env: doom_newdata
+  - diffusion_model: doom_VDA_action_frame_xl_short
 
 
 wandb:
@@ -11,9 +11,9 @@ wandb:
   name: ${common.run_name}
 
 diffusion:
-  learn_sigma: False
+  learn_sigma: True
 
-pretrained_weights: null
+pretrained_weights: /scratch/yl11330/diffusion-for-simulation/pretrained_ditxl/DiT-XL-2-256x256.pt
 
 initialization:
   path_to_ckpt: null
@@ -42,7 +42,7 @@ training:
 evaluation:
   should: True
   dataloader_name: TestDatasetTraverserNew
-  subsample_rate: 5
+  subsample_rate: 50
   every: 1
   max_num_episodes: 1000000
 
@@ -54,7 +54,7 @@ inference:
   num_sampling_steps: 250
   vae_path: /scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth
   num_log_wandb: 20
-  max_num_episodes: 1000000
+  max_num_episodes: 32
 
 hydra:
   run:

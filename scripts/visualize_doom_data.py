@@ -11,7 +11,7 @@ from src.data import (
 )
 
 
-data_path = '/scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent/train'
+data_path = '/scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent_act_repeat/train'
 out_dir = 'temp'
 os.makedirs(out_dir, exist_ok=True)
 device = torch.device('cuda')
