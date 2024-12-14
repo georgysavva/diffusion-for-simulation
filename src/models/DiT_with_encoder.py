@@ -293,6 +293,7 @@ class DiT(nn.Module):
         self.initialize_weights()
 
     def load_pretrained_weights(self, weights):
+        # This does work yet.
         key_mapping = {
             "pos_embed": "noised_obs_pos_embed",
             "x_embedder.proj.weight": "obs_embedder.proj.weight",

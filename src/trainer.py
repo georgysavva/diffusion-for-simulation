@@ -117,7 +117,7 @@ class Trainer:
 
         if cfg.initialization.path_to_ckpt is not None:
             sd = torch.load(
-                Path(cfg.initialization.path_to_ckp),
+                Path(cfg.initialization.path_to_ckpt),
                 map_location=self._device,
                 weights_only=True,
             )
