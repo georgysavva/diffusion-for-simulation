@@ -333,7 +333,7 @@ class Trainer:
             image.save(os.path.join(sample_dir, f'{sample_i}.jpg'))
 
             if self._cfg.wandb.do_log and sample_i < self._cfg.inference.num_log_wandb:
-                act_names = [["TURN_LEFT", "TURN_RIGHT", "MOVE_FORWARD", "MOVE_LEFT", "MOVE_RIGHT", "NOOP"][act] for act in acts]
+                act_names = [["NOOP", "TURN_LEFT", "TURN_RIGHT", "MOVE_FORWARD", "MOVE_LEFT", "MOVE_RIGHT"][act] for act in acts]
                 try:
                     wandb.log({f'inference_img_{sample_i}': wandb.Image(image, caption=', '.join(act_names)), "epoch": self.epoch}, step=self.global_step)
                 except:

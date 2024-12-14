@@ -1,10 +1,11 @@
 import numpy as np
 import torch
 from tqdm import tqdm
+from copy import deepcopy
 
 from src.data.episode import Episode
 from src.diffusion.respace import SpacedDiffusion
-from src.utils import denormalize_img, normalize_img, prepare_image_obs, to_numpy_video
+from src.utils import denormalize_img, normalize_img, to_numpy_video
 
 
 class TrajectoryEvaluator:
@@ -13,7 +14,7 @@ class TrajectoryEvaluator:
         self,
         diffusion: SpacedDiffusion,
         vae,
-        num_seed_steps: int,
+        diffusion_model,
         num_conditioning_steps: int,
         sampling_algorithm: str,
         vae_batch_size: int,
@@ -21,77 +22,66 @@ class TrajectoryEvaluator:
     ):
         self._diffusion = diffusion
         self._vae = vae
-        self._num_seed_steps = num_seed_steps
+        self._diffusion_model = diffusion_model
         self._num_conditioning_steps = num_conditioning_steps
+        self._vae_batch_size = vae_batch_size
+        self._device = device
+
         if sampling_algorithm == "DDPM":
             self._sampling_function = diffusion.p_sample_loop
         elif sampling_algorithm == "DDIM":
             self._sampling_function = diffusion.ddim_sample_loop
         else:
             raise ValueError(f"Unknown sampling algorithm: {sampling_algorithm}")
-        assert (
-            num_conditioning_steps >= num_seed_steps
-        ), "Number of conditioning steps must be greater than or equal to the number of seed steps."
-        self._vae_batch_size = vae_batch_size
-        self._device = device
 
     @torch.no_grad()
-    def evaluate_episode(
-        self, model, episode: Episode, auto_regressive: bool = False
-    ) -> np.ndarray:
-        model.eval()
+    def evaluate_episodes(self, episodes, teacherforcing: bool, clip_denoised: bool) -> np.ndarray:
+        self._diffusion_model.eval()
         self._vae.eval()
-        obs_img = episode.obs.to(self._device)
-        act = episode.act.to(self._device)
-        obs_img_norm = normalize_img(obs_img)
-        obs_latent = self._run_encode_on_episode(obs_img_norm)
-        latent_shape = obs_latent.shape[-3:]
-        prev_obs = torch.zeros(
-            self._num_conditioning_steps, *latent_shape, device=self._device
-        )
-        prev_act = torch.zeros(
-            self._num_conditioning_steps, device=self._device, dtype=torch.int32
-        )
-        prev_obs[-self._num_seed_steps :] = obs_latent[: self._num_seed_steps]
-        prev_act[-self._num_seed_steps :] = act[: self._num_seed_steps]
 
-        generated_trajectory_latent = torch.empty(
-            obs_latent.size(0) - self._num_seed_steps,
-            *latent_shape,
-            device=self._device,
-        )
-        for step in tqdm(range(self._num_seed_steps, len(episode)), desc="Generating"):
-            z = torch.randn(1, *latent_shape, device=self._device)
-            model_kwargs = dict(
-                prev_obs=prev_obs.unsqueeze(0), prev_act=prev_act.unsqueeze(0)
-            )
+        batch_size = len(episodes)
+        episode_lens = [len(e) for e in episodes]
+        assert len(set(episode_lens)) == 1
+
+        obs_imgs = torch.stack([episode.obs.to(self._device) for episode in episodes])
+        acts = torch.stack([episode.act.to(self._device) for episode in episodes]) # (N, nframe,)
+        obs_img_norms = [normalize_img(obs_img) for obs_img in obs_imgs]
+        obs_latents = torch.stack([self._run_encode_on_episode(obs_img_norm) for obs_img_norm in obs_img_norms]) # (N, nframe, 4, 32, 32)
+
+        prev_act = deepcopy(acts[:, :self._num_conditioning_steps])
+        prev_obs = deepcopy(obs_latents[:, :self._num_conditioning_steps])
+        generated_trajectory_latent = torch.empty(batch_size, obs_latents.shape[1] - self._num_conditioning_steps, *obs_latents.shape[-3:], device=self._device)
+
+        for step in tqdm(range(self._num_conditioning_steps, len(episodes[0])), desc="Generating"):
+            # generate next frame
+            z = torch.randn(batch_size, self._num_conditioning_steps + 1, *obs_latents.shape[-3:], device=self._device)
             generated_obs = self._sampling_function(
-                model.forward,
+                self._diffusion_model.forward,
                 z.shape,
                 z,
-                clip_denoised=False,
-                model_kwargs=model_kwargs,
+                clip_denoised=clip_denoised,
+                model_kwargs={'prev_act': prev_act},
                 progress=False,
                 device=self._device,
-            ).squeeze(0)
-            prev_act = torch.roll(prev_act, -1, 0)
-            prev_act[-1] = act[step]
-            prev_obs = torch.roll(prev_obs, -1, 0)
-            if auto_regressive:
-                prev_obs[-1] = generated_obs
-            else:
-                prev_obs[-1] = obs_latent[step]
-            generated_trajectory_latent[step - self._num_seed_steps] = generated_obs
-        generated_trajectory_img_norm = self._run_decode_on_episode(
-            generated_trajectory_latent
-        )
-        generated_trajectory_img = denormalize_img(generated_trajectory_img_norm)
-        full_trajectory_img = torch.cat(
-            [obs_img[: self._num_seed_steps], generated_trajectory_img], dim=0
-        )
+                prev_obs=prev_obs,
+            )
+            # print((generated_obs[:self._num_conditioning_steps] - prev_obs).abs().mean())
+            generated_obs = generated_obs[:, -1]
 
-        generated_trajectory_img_np = to_numpy_video(full_trajectory_img)
-        return generated_trajectory_img_np
+            # update conditioning
+            prev_act = torch.roll(prev_act, -1, 1)
+            prev_act[:, -1] = acts[:, step]
+            prev_obs = torch.roll(prev_obs, -1, 1)
+            if teacherforcing:
+                prev_obs[:, -1] = obs_latents[:, step]
+            else:
+                prev_obs[:, -1] = generated_obs
+            # update output
+            generated_trajectory_latent[:, step - self._num_conditioning_steps] = generated_obs
+
+        generated_trajectory_img_norm = torch.stack([self._run_decode_on_episode(gen) for gen in generated_trajectory_latent])
+        generated_trajectory_img = denormalize_img(generated_trajectory_img_norm)
+        return torch.cat([obs_imgs[:, :self._num_conditioning_steps], generated_trajectory_img], dim=1)
 
     @torch.no_grad()
     def run_vae_on_episode(

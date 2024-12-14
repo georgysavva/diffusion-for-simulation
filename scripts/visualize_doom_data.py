@@ -23,7 +23,7 @@ vae.decoder.load_state_dict(torch.load('/scratch/gs4288/shared/diffusion_for_sim
 vae.eval()
 
 
-action_to_name = ["TURN_LEFT", "TURN_RIGHT", "MOVE_FORWARD", "MOVE_LEFT", "MOVE_RIGHT", "NOOP"]
+action_to_name = ["NOOP", "TURN_LEFT", "TURN_RIGHT", "MOVE_FORWARD", "MOVE_LEFT", "MOVE_RIGHT"]
 train_dataset = Dataset(data_path, cache_in_ram=False)
 batch_sampler = BatchSampler(
     train_dataset,

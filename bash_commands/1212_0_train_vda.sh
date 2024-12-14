@@ -9,6 +9,6 @@ python src/main_action_frame_xl_pretrained.py experiment_name=main_action_frame_
 # action frame xl pretrained short
 python src/main_action_frame_xl_pretrained_short.py experiment_name=main_action_frame_xl_pretrained_short
 
-# Submitted batch job 54685516
-# Submitted batch job 54685517
-# Submitted batch job 54685518
+# Submitted batch job 54685516 # dont care about old data, killed
+# Submitted batch job 54685517 # dont care about xl, killed
+# Submitted batch job 54685518 # dont care about xl, killed

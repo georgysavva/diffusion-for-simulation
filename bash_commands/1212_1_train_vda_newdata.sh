@@ -10,5 +10,5 @@ python src/main_action_frame_xl_pretrained_newdata.py experiment_name=main_actio
 python src/main_action_frame_xl_pretrained_short_newdata.py experiment_name=main_action_frame_xl_pretrained_short_newdata
 
 # Submitted batch job 54685519
-# Submitted batch job 54685520
-# Submitted batch job 54685521
+# Submitted batch job 54685520 # dont care about xl, killed
+# Submitted batch job 54685521 # dont care about xl, killed

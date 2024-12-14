@@ -4,4 +4,5 @@
 # action frame short
 python src/main_action_frame_short_newdata.py experiment_name=main_action_frame_short_newdata
 
+# done care about short anymore, killed
 # Submitted batch job 54685522
