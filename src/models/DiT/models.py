@@ -304,9 +304,7 @@ class DiT(nn.Module):
         for map_from, map_to in key_mapping.items():
             if map_from in weights:
                 weights[map_to] = weights.pop(map_from)
-        missing_keys, unexpected_keys = self.load_state_dict(
-            weights, strict=False
-        )  # This doesn't work yet. Fix the layers.
+        missing_keys, unexpected_keys = self.load_state_dict(weights, strict=False)
         print(
             f"Loaded pretrained weights. Missing keys: {missing_keys}. Unexpected keys: {unexpected_keys}"
         )

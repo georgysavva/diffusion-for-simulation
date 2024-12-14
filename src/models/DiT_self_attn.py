@@ -91,23 +91,10 @@ class DiTBlock(nn.Module):
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
 
-        self.cross_norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.cross_attn = nn.MultiheadAttention(
-            embed_dim=hidden_size, num_heads=num_heads, batch_first=True
-        )
-
-    def forward(self, x, t, cond):
+    def forward(self, x, t):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(t).chunk(6, dim=1)
         )
-
-        conditioned_attn, _ = self.cross_attn(
-            query=self.cross_norm(x),  # (N, T, D)
-            key=cond,  # (N, steps * T, D)
-            value=cond,  # (N, steps * T, D)
-            need_weights=False,
-        )
-        x = x + conditioned_attn  # (N, T, D)
 
         x = x + gate_msa.unsqueeze(1) * self.attn(
             modulate(self.norm1(x), shift_msa, scale_msa)
@@ -134,7 +121,7 @@ class FinalLayer(nn.Module):
             nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         )
 
-    def forward(self, x, t, cond):
+    def forward(self, x, t):
         shift, scale = self.adaLN_modulation(t).chunk(2, dim=1)
         x = modulate(self.norm_final(x), shift, scale)
         x = self.linear(x)
@@ -155,76 +142,13 @@ class ActionEmbedder(nn.Module):
         return embeddings
 
 
-class PrevObsEncoderBlock(nn.Module):
-    def __init__(self, hidden_size, num_heads, mlp_ratio):
+class FrameEmbedder(nn.Module):
+    def __init__(self, num_frames, hidden_size):
         super().__init__()
-        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True)
-        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        mlp_hidden_dim = int(hidden_size * mlp_ratio)
-        approx_gelu = lambda: nn.GELU(approximate="tanh")
-        self.mlp = Mlp(
-            in_features=hidden_size,
-            hidden_features=mlp_hidden_dim,
-            act_layer=approx_gelu,
-            drop=0,
-        )
+        self.embedding_table = nn.Embedding(num_frames, hidden_size)
 
-    def forward(self, x):
-        x = x + self.attn(self.norm1(x))
-        x = x + self.mlp(self.norm2(x))
-        return x
-
-
-class PrevObsEncoder(nn.Module):
-    def __init__(
-        self,
-        input_size,
-        patch_size,
-        in_channels,
-        hidden_size,
-        depth,
-        num_heads,
-        mlp_ratio,
-    ):
-        super().__init__()
-        self.patch_embed = PatchEmbed(
-            input_size, patch_size, in_channels, hidden_size, bias=True
-        )
-        num_patches = self.patch_embed.num_patches
-        pos_embed = get_1d_sincos_pos_embed_from_grid(
-            hidden_size,
-            np.arange(num_patches + 1, dtype=np.float32),
-        )
-        self.pos_embed = nn.Parameter(
-            torch.from_numpy(pos_embed).float().unsqueeze(0), requires_grad=False
-        )
-        self.blocks = nn.ModuleList(
-            [
-                PrevObsEncoderBlock(
-                    hidden_size,
-                    num_heads,
-                    mlp_ratio=mlp_ratio,
-                )
-                for _ in range(depth)
-            ]
-        )
-        self.output_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
-        self.norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.fc = nn.Linear(hidden_size, hidden_size)
-
-    def forward(self, x):
-        B = x.size(0)
-        x = self.patch_embed(x)
-        output_token = self.output_token.expand(B, -1, -1)
-        print(output_token[0, 0, :10])
-        x = torch.cat((output_token, x), dim=1)
-        x = x + self.pos_embed
-
-        x = self.encoder(x)
-        x = self.norm(x[:, 0])  # Take output token
-        x = self.fc(x)
-        return x
+    def forward(self, frame_indices):
+        return self.embedding_table(frame_indices)
 
 
 class DiT(nn.Module):
@@ -257,28 +181,14 @@ class DiT(nn.Module):
         )
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
         self.num_conditioning_steps = num_conditioning_steps
-        self.prev_obs_encoder = PrevObsEncoder(
-            input_size,
-            patch_size,
-            in_channels,
-            hidden_size,
-            depth,
-            num_heads,
-            mlp_ratio,
-        )
         self.act_embedder = ActionEmbedder(num_actions, hidden_size)
         num_patches = self.obs_embedder.num_patches
+        self.num_patches = num_patches
         # Will use fixed sin-cos embedding:
-        self.noised_obs_pos_embed = nn.Parameter(
+        self.pos_embed = nn.Parameter(
             torch.zeros(1, num_patches, hidden_size), requires_grad=False
         )
-        temporal_embed = get_1d_sincos_pos_embed_from_grid(
-            hidden_size, np.arange(num_conditioning_steps, dtype=np.float32)
-        )
-        self.temporal_embed = nn.Parameter(
-            torch.from_numpy(temporal_embed).float().unsqueeze(0), requires_grad=False
-        )
-        self.cond_mapping = nn.Linear(2 * hidden_size, hidden_size, bias=True)
+        self.temporal_embed = FrameEmbedder(num_conditioning_steps + 1, hidden_size)
         self.blocks = nn.ModuleList(
             [
                 DiTBlock(
@@ -293,6 +203,7 @@ class DiT(nn.Module):
         self.initialize_weights()
 
     def load_pretrained_weights(self, weights):
+        # This doesn't work yet. Fix the layers.
         key_mapping = {
             "pos_embed": "noised_obs_pos_embed",
             "x_embedder.proj.weight": "obs_embedder.proj.weight",
@@ -317,23 +228,18 @@ class DiT(nn.Module):
         self.apply(_basic_init)
 
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        noised_obs_pos_embed = get_2d_sincos_pos_embed(
-            self.noised_obs_pos_embed.shape[-1],
+        pos_embed = get_2d_sincos_pos_embed(
+            self.pos_embed.shape[-1],
             int(self.obs_embedder.num_patches**0.5),
         )
-        self.noised_obs_pos_embed.data.copy_(
-            torch.from_numpy(noised_obs_pos_embed).float().unsqueeze(0)
-        )
+        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         w = self.obs_embedder.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
         nn.init.constant_(self.obs_embedder.proj.bias, 0)
-        w = self.prev_obs_encoder.patch_embed.proj.weight.data
-        nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        nn.init.constant_(self.prev_obs_encoder.patch_embed.proj.bias, 0)
-        # Initialize action embedding table:
         nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
+        nn.init.normal_(self.temporal_embed.embedding_table.weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
@@ -372,25 +278,44 @@ class DiT(nn.Module):
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
-        noised_obs = (
-            self.obs_embedder(noised_obs) + self.noised_obs_pos_embed
-        )  # (N, T, D), where T = H * W / patch_size ** 2
-        t = self.t_embedder(t)  # (N, D)
-        prev_obs = einops.rearrange(prev_obs, "N steps C H W -> (N steps) C H W")
-        prev_obs = self.prev_obs_encoder(prev_obs)  # (N * steps, D)
-        prev_obs = einops.rearrange(
-            prev_obs,
-            "(N steps) D -> N steps D",
-            N=noised_obs.size(0),
-            steps=self.num_conditioning_steps,
+        x = torch.cat([prev_obs, noised_obs.unsqueeze(1)], dim=1)
+        x = einops.rearrange(x, "n steps c h w -> (n steps) c h w")
+        x = self.obs_embedder(x) + self.pos_embed
+        x = einops.rearrange(
+            x,
+            "(n steps) t m -> n steps t m",
+            n=t.shape[0],
+            steps=self.num_conditioning_steps + 1,
         )
-        prev_act = self.act_embedder(prev_act)  # (N, steps, D)
-        cond = torch.cat([prev_obs, prev_act], dim=-1)  # (N, steps, 2 * D)
-        cond = self.cond_mapping(cond)  # (N, steps, D)
+
+        prev_act = (
+            self.act_embedder(prev_act)
+            .unsqueeze(2)
+            .expand(-1, -1, self.num_patches, -1)
+        )
+        x[:, : self.num_conditioning_steps] = (
+            x[:, : self.num_conditioning_steps] + prev_act
+        )
+        temporal_idx = torch.arange(self.num_conditioning_steps + 1, device=self.device)
+        temporal_idx = self.temporal_embed(temporal_idx)
+        x = einops.rearrange(x, "n steps t m -> (n t) steps m")
+        x += temporal_idx
+        x = einops.rearrange(
+            x, "(n t) steps m -> n (steps t) m", n=t.shape[0], t=self.num_patches
+        )
+
+        t = self.t_embedder(t)  # (N, D)
         for block in self.blocks:
-            noised_obs = block(noised_obs, t, cond)  # (N, T, D)
+            x = block(x, t)  # (N, T, D)
+        x = einops.rearrange(
+            x,
+            "n (steps t) m -> n steps t m",
+            steps=self.num_conditioning_steps + 1,
+            t=self.num_patches,
+        )
+        noised_obs = x[:, -1]
         noised_obs = self.final_layer(
-            noised_obs, t, cond
+            noised_obs, t
         )  # (N, T, patch_size ** 2 * out_channels)
         noised_obs = self.unpatchify(noised_obs)  # (N, out_channels, H, W)
         return noised_obs

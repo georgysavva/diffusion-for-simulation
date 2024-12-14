@@ -34,7 +34,7 @@ checkpointing:
 
 
 static_dataset:
-  path: ${env.data_path}/latent/
+  path: ${env.data_path_latent}
   ignore_sample_weights: True
   guarantee_full_seqs: True
   image_resolution: 256
@@ -50,8 +50,8 @@ evaluation:
 
 inference:
   should: True
-  every: 20
-  episode_path: ${env.data_path}/original/test/episode_0.pt
+  every: 5
+  episode_path: ${env.data_path_original}/test/episode_0.pt
   take_n_first_frames: 100
   sampling_algorithm: DDIM
   vae_path: ${common.project_storage_base_path}/vae/trained_vae_decoder.pth
