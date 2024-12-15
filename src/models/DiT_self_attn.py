@@ -168,6 +168,7 @@ class DiT(nn.Module):
         num_heads,
         mlp_ratio,
         time_frequency_embedding_size,
+        learn_temporal_embedding,
         learn_sigma,
     ):
         super().__init__()
@@ -188,7 +189,17 @@ class DiT(nn.Module):
         self.pos_embed = nn.Parameter(
             torch.zeros(1, num_patches, hidden_size), requires_grad=False
         )
-        self.temporal_embed = FrameEmbedder(num_conditioning_steps + 1, hidden_size)
+        if learn_temporal_embedding:
+            self.temporal_embed = FrameEmbedder(num_conditioning_steps + 1, hidden_size)
+        else:
+            temporal_embed = get_1d_sincos_pos_embed_from_grid(
+                hidden_size, np.arange(num_conditioning_steps + 1, dtype=np.float32)
+            )
+            self.temporal_embed = nn.Parameter(
+                torch.from_numpy(temporal_embed).float().unsqueeze(0),
+                requires_grad=False,
+            )
+        self.learn_temporal_embedding = learn_temporal_embedding
         self.blocks = nn.ModuleList(
             [
                 DiTBlock(
@@ -205,7 +216,6 @@ class DiT(nn.Module):
     def load_pretrained_weights(self, weights):
         # This doesn't work yet. Fix the layers.
         key_mapping = {
-            "pos_embed": "noised_obs_pos_embed",
             "x_embedder.proj.weight": "obs_embedder.proj.weight",
             "x_embedder.proj.bias": "obs_embedder.proj.bias",
         }
@@ -239,7 +249,8 @@ class DiT(nn.Module):
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
         nn.init.constant_(self.obs_embedder.proj.bias, 0)
         nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
-        nn.init.normal_(self.temporal_embed.embedding_table.weight, std=0.02)
+        if self.learn_temporal_embedding:
+            nn.init.normal_(self.temporal_embed.embedding_table.weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
@@ -296,10 +307,13 @@ class DiT(nn.Module):
         x[:, : self.num_conditioning_steps] = (
             x[:, : self.num_conditioning_steps] + prev_act
         )
-        temporal_idx = torch.arange(self.num_conditioning_steps + 1, device=self.device)
-        temporal_idx = self.temporal_embed(temporal_idx)
+        if self.learn_temporal_embedding:
+            temporal = torch.arange(self.num_conditioning_steps + 1, device=self.device)
+            temporal = self.temporal_embed(temporal)
+        else:
+            temporal = self.temporal_embed
         x = einops.rearrange(x, "n steps t m -> (n t) steps m")
-        x += temporal_idx
+        x += temporal
         x = einops.rearrange(
             x, "(n t) steps m -> n (steps t) m", n=t.shape[0], t=self.num_patches
         )
