@@ -93,10 +93,10 @@ class DiTBlock(nn.Module):
         )
         self.separate_cross_attn = separate_cross_attn
         if separate_cross_attn:
-            self.cross_norm = nn.LayerNorm(
+            self.cross_obs_norm = nn.LayerNorm(
                 hidden_size, elementwise_affine=False, eps=1e-6
             )
-            self.cross_attn = nn.MultiheadAttention(
+            self.cross_obs_attn = nn.MultiheadAttention(
                 embed_dim=hidden_size, num_heads=num_heads, batch_first=True
             )
             self.cross_act_norm = nn.LayerNorm(
@@ -119,8 +119,8 @@ class DiTBlock(nn.Module):
         )
         if self.separate_cross_attn:
             # Cross-Attention on prev_obs
-            obs_conditioned, _ = self.cross_attn(
-                query=self.cross_norm(x),  # (N, T, D)
+            obs_conditioned, _ = self.cross_obs_attn(
+                query=self.cross_obs_norm(x),  # (N, T, D)
                 key=prev_obs,  # (N, steps * T, D)
                 value=prev_obs,  # (N, steps * T, D)
                 need_weights=False,
