@@ -71,6 +71,7 @@ class DiTBlock(nn.Module):
         hidden_size,
         num_heads,
         mlp_ratio,
+        cross_attn,
         **block_kwargs,
     ):
         super().__init__()
@@ -90,24 +91,27 @@ class DiTBlock(nn.Module):
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
-
-        self.cross_norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.cross_attn = nn.MultiheadAttention(
-            embed_dim=hidden_size, num_heads=num_heads, batch_first=True
-        )
+        self.do_cross_attn = cross_attn
+        if self.do_cross_attn:
+            self.cross_norm = nn.LayerNorm(
+                hidden_size, elementwise_affine=False, eps=1e-6
+            )
+            self.cross_attn = nn.MultiheadAttention(
+                embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+            )
 
     def forward(self, x, t, cond):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(t).chunk(6, dim=1)
         )
-
-        conditioned_attn, _ = self.cross_attn(
-            query=self.cross_norm(x),  # (N, T, D)
-            key=cond,  # (N, steps * T, D)
-            value=cond,  # (N, steps * T, D)
-            need_weights=False,
-        )
-        x = x + conditioned_attn  # (N, T, D)
+        if self.do_cross_attn:
+            conditioned_attn, _ = self.cross_attn(
+                query=self.cross_norm(x),  # (N, T, D)
+                key=cond,  # (N, steps * T, D)
+                value=cond,  # (N, steps * T, D)
+                need_weights=False,
+            )
+            x = x + conditioned_attn  # (N, T, D)
 
         x = x + gate_msa.unsqueeze(1) * self.attn(
             modulate(self.norm1(x), shift_msa, scale_msa)
@@ -217,11 +221,10 @@ class PrevObsEncoder(nn.Module):
         B = x.size(0)
         x = self.patch_embed(x)
         output_token = self.output_token.expand(B, -1, -1)
-        print(output_token[0, 0, :10])
         x = torch.cat((output_token, x), dim=1)
         x = x + self.pos_embed
-
-        x = self.encoder(x)
+        for block in self.blocks:
+            x = block(x)
         x = self.norm(x[:, 0])  # Take output token
         x = self.fc(x)
         return x
@@ -245,6 +248,7 @@ class DiT(nn.Module):
         mlp_ratio,
         time_frequency_embedding_size,
         learn_sigma,
+        conditioning_type,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -278,17 +282,18 @@ class DiT(nn.Module):
         self.temporal_embed = nn.Parameter(
             torch.from_numpy(temporal_embed).float().unsqueeze(0), requires_grad=False
         )
-        self.cond_mapping = nn.Linear(2 * hidden_size, hidden_size, bias=True)
         self.blocks = nn.ModuleList(
             [
                 DiTBlock(
                     hidden_size,
                     num_heads,
                     mlp_ratio=mlp_ratio,
+                    cross_attn=conditioning_type == "cross_attn",
                 )
                 for _ in range(depth)
             ]
         )
+        self.conditioning_type = conditioning_type
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
 
@@ -386,8 +391,9 @@ class DiT(nn.Module):
             steps=self.num_conditioning_steps,
         )
         prev_act = self.act_embedder(prev_act)  # (N, steps, D)
-        cond = torch.cat([prev_obs, prev_act], dim=-1)  # (N, steps, 2 * D)
-        cond = self.cond_mapping(cond)  # (N, steps, D)
+        cond = prev_obs + prev_act
+        cond = cond + self.temporal_embed  # (N, steps, D)
+        assert self.conditioning_type == "cross_attn"
         for block in self.blocks:
             noised_obs = block(noised_obs, t, cond)  # (N, T, D)
         noised_obs = self.final_layer(
