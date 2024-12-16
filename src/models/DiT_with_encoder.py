@@ -272,15 +272,16 @@ class DiT(nn.Module):
         )
         self.act_embedder = ActionEmbedder(num_actions, hidden_size)
         num_patches = self.obs_embedder.num_patches
+        self.num_patches = num_patches
         # Will use fixed sin-cos embedding:
         self.noised_obs_pos_embed = nn.Parameter(
             torch.zeros(1, num_patches, hidden_size), requires_grad=False
         )
-        temporal_embed = get_1d_sincos_pos_embed_from_grid(
+        concat_embed = get_1d_sincos_pos_embed_from_grid(
             hidden_size, np.arange(num_conditioning_steps, dtype=np.float32)
         )
         self.temporal_embed = nn.Parameter(
-            torch.from_numpy(temporal_embed).float().unsqueeze(0), requires_grad=False
+            torch.from_numpy(concat_embed).float().unsqueeze(0), requires_grad=False
         )
         self.blocks = nn.ModuleList(
             [
@@ -294,6 +295,8 @@ class DiT(nn.Module):
             ]
         )
         self.conditioning_type = conditioning_type
+        if self.conditioning_type == "concatenation":
+            self.concat_embed = nn.Embedding(2, hidden_size)
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
 
@@ -330,7 +333,8 @@ class DiT(nn.Module):
         self.noised_obs_pos_embed.data.copy_(
             torch.from_numpy(noised_obs_pos_embed).float().unsqueeze(0)
         )
-
+        if self.conditioning_type == "concatenation":
+            nn.init.normal_(self.concat_embed.weight, std=0.02)
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         w = self.obs_embedder.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
@@ -371,15 +375,15 @@ class DiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
-    def forward(self, noised_obs, t, prev_obs, prev_act):
+    def forward(self, x, t, prev_obs, prev_act):
         """
         Forward pass of DiT.
         x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
-        noised_obs = (
-            self.obs_embedder(noised_obs) + self.noised_obs_pos_embed
+        x = (
+            self.obs_embedder(x) + self.noised_obs_pos_embed
         )  # (N, T, D), where T = H * W / patch_size ** 2
         t = self.t_embedder(t)  # (N, D)
         prev_obs = einops.rearrange(prev_obs, "N steps C H W -> (N steps) C H W")
@@ -387,20 +391,31 @@ class DiT(nn.Module):
         prev_obs = einops.rearrange(
             prev_obs,
             "(N steps) D -> N steps D",
-            N=noised_obs.size(0),
+            N=x.size(0),
             steps=self.num_conditioning_steps,
         )
         prev_act = self.act_embedder(prev_act)  # (N, steps, D)
         cond = prev_obs + prev_act
         cond = cond + self.temporal_embed  # (N, steps, D)
-        assert self.conditioning_type == "cross_attn"
+        if self.conditioning_type == "concatenation":
+            cond_embed = self.concat_embed(
+                torch.tensor(0, device=self.device).expand(x.size(0))
+            )
+            cond = cond + cond_embed.unsqueeze(1)  # (N, steps, D)
+            x_embed = self.concat_embed(
+                torch.tensor(1, device=self.device).expand(x.size(0))
+            )
+            x = x + x_embed.unsqueeze(1)  # (N, T, D)
+            x = torch.cat([cond, x], dim=1)  # (N, steps + T , D)
+            cond = None
+
         for block in self.blocks:
-            noised_obs = block(noised_obs, t, cond)  # (N, T, D)
-        noised_obs = self.final_layer(
-            noised_obs, t, cond
-        )  # (N, T, patch_size ** 2 * out_channels)
-        noised_obs = self.unpatchify(noised_obs)  # (N, out_channels, H, W)
-        return noised_obs
+            x = block(x, t, cond)
+        if self.conditioning_type == "concatenation":
+            x = x[:, -self.num_patches :]  # (N, T, D)
+        x = self.final_layer(x, t, cond)  # (N, T, patch_size ** 2 * out_channels)
+        x = self.unpatchify(x)  # (N, out_channels, H, W)
+        return x
 
     @property
     def device(self):
