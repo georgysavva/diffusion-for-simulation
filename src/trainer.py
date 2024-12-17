@@ -327,9 +327,10 @@ class Trainer:
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         for generation_mode in self._cfg.inference.generation_mode:
-            generated_trajectory = self.trajectory_evaluator.evaluate_episode(
+            generated_trajectory,psnr = self.trajectory_evaluator.evaluate_episode(
                 self.diffusion_model, self.inference_episode, generation_mode
             )
+            wandb_log({f"inference/PSNR_{generation_mode}": psnr}, self.epoch, self.global_step)
             save_np_video(
                 generated_trajectory,
                 output_dir

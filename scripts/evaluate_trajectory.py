@@ -36,12 +36,8 @@ def main(args):
         )
         if len(model_versions) == 0:
             raise ValueError("No model versions found.")
-        elif len(model_versions) == 1:
-            model_version = model_versions[0]
         else:
-            model_version = model_versions[
-                1
-            ]  # Prefer the second latest model because the most latest if a temp one
+            model_version = model_versions[0]
     else:
         model_version = args.model_version
     print("Using model version:", model_version)
@@ -78,9 +74,10 @@ def main(args):
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     for generation_mode in args.generation_modes:
-        generated_trajectory = evaluator.evaluate_episode(
+        generated_trajectory, psnr = evaluator.evaluate_episode(
             diffusion_model, episode, generation_mode
         )
+        print(f"generated_{generation_mode}_{args.sampling_algorithm} PSNR: {psnr:.2f}")
         save_np_video(
             generated_trajectory,
             output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
