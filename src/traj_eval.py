@@ -140,7 +140,7 @@ class TrajectoryEvaluator:
             obs_img_norm.append(self._vae.decode(batch / 0.18215).sample.clamp(-1, 1))
         obs_img_norm = torch.cat(obs_img_norm, dim=0)
         return obs_img_norm
-    
+
 def compute_psnr(frames1: torch.Tensor, frames2: torch.Tensor, max_pixel_value: int = 255) -> float:
     """
     Compute the average PSNR between two batches of image frames.
@@ -173,3 +173,17 @@ def compute_psnr(frames1: torch.Tensor, frames2: torch.Tensor, max_pixel_value: 
     avg_psnr = psnr_per_frame.mean().item()
 
     return avg_psnr
+
+
+def to_strip_of_images(frames, num_seed_frames, stride, num_generated_frames):
+    """
+    Convert a batch of video frames into a strip of images for visualization.
+    """
+    # Select frames from the video
+    frames = frames[
+        num_seed_frames
+        - 1 : (num_seed_frames - 1)
+        + (num_generated_frames + 1) * stride : stride
+    ]
+    horizontal_strip = np.concatenate(frames, axis=1)
+    return horizontal_strip
