@@ -67,7 +67,12 @@ class DiTBlock(nn.Module):
     """
 
     def __init__(
-        self, hidden_size, num_heads, mlp_ratio, enable_conditioning, **block_kwargs
+        self,
+        hidden_size,
+        num_heads,
+        mlp_ratio,
+        cross_attn,
+        **block_kwargs,
     ):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -86,43 +91,27 @@ class DiTBlock(nn.Module):
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
-        self.enable_conditioning = enable_conditioning
-        if enable_conditioning:
-            self.cross_obs_norm = nn.LayerNorm(
+        self.do_cross_attn = cross_attn
+        if self.do_cross_attn:
+            self.cross_norm = nn.LayerNorm(
                 hidden_size, elementwise_affine=False, eps=1e-6
             )
-            self.cross_attn_obs = nn.MultiheadAttention(
+            self.cross_attn = nn.MultiheadAttention(
                 embed_dim=hidden_size, num_heads=num_heads, batch_first=True
             )
 
-            self.cross_act_norm = nn.LayerNorm(
-                hidden_size, elementwise_affine=False, eps=1e-6
-            )
-            self.cross_attn_act = nn.MultiheadAttention(
-                embed_dim=hidden_size, num_heads=num_heads, batch_first=True
-            )
-
-    def forward(self, x, t, prev_obs, prev_act):
+    def forward(self, x, t, cond):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(t).chunk(6, dim=1)
         )
-        if self.enable_conditioning:
-            # Cross-Attention on prev_obs
-            obs_conditioned, _ = self.cross_attn_obs(
-                query=self.cross_obs_norm(x),  # (N, T, D)
-                key=prev_obs,  # (N, steps * T, D)
-                value=prev_obs,  # (N, steps * T, D)
+        if self.do_cross_attn:
+            conditioned_attn, _ = self.cross_attn(
+                query=self.cross_norm(x),  # (N, T, D)
+                key=cond,  # (N, steps * T, D)
+                value=cond,  # (N, steps * T, D)
                 need_weights=False,
             )
-            x = x + obs_conditioned  # (N, T, D)
-            # Cross-Attention on prev_act
-            act_conditioned, _ = self.cross_attn_act(
-                query=self.cross_act_norm(x),  # (N, T, D)
-                key=prev_act,  # (N, steps, D)
-                value=prev_act,  # (N, steps, D)
-                need_weights=False,
-            )
-            x = x + act_conditioned  # (N, T, D)
+            x = x + conditioned_attn  # (N, T, D)
 
         x = x + gate_msa.unsqueeze(1) * self.attn(
             modulate(self.norm1(x), shift_msa, scale_msa)
@@ -149,7 +138,7 @@ class FinalLayer(nn.Module):
             nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         )
 
-    def forward(self, x, t, prev_obs, prev_act):
+    def forward(self, x, t, cond):
         shift, scale = self.adaLN_modulation(t).chunk(2, dim=1)
         x = modulate(self.norm_final(x), shift, scale)
         x = self.linear(x)
@@ -161,66 +150,84 @@ class ActionEmbedder(nn.Module):
     Embeds actions into vector representations.
     """
 
-    def __init__(self, num_actions, num_conditioning_steps, hidden_size):
+    def __init__(self, num_actions, hidden_size):
         super().__init__()
         self.embedding_table = nn.Embedding(num_actions, hidden_size)
-        time_embed = get_1d_sincos_pos_embed_from_grid(
-            hidden_size, np.arange(num_conditioning_steps, dtype=np.float32)
-        )
-        self.time_embed = nn.Parameter(
-            torch.from_numpy(time_embed).float().unsqueeze(0), requires_grad=False
-        )
 
     def forward(self, actions):
         embeddings = self.embedding_table(actions)
-        embeddings = embeddings + self.time_embed
         return embeddings
 
 
-class PreviousObservationEmbedder(nn.Module):
-    """
-    Embeds previous observations into vector representations.
-    """
+class PrevObsEncoderBlock(nn.Module):
+    def __init__(self, hidden_size, num_heads, mlp_ratio):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True)
+        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        mlp_hidden_dim = int(hidden_size * mlp_ratio)
+        approx_gelu = lambda: nn.GELU(approximate="tanh")
+        self.mlp = Mlp(
+            in_features=hidden_size,
+            hidden_features=mlp_hidden_dim,
+            act_layer=approx_gelu,
+            drop=0,
+        )
 
+    def forward(self, x):
+        x = x + self.attn(self.norm1(x))
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+
+class PrevObsEncoder(nn.Module):
     def __init__(
-        self, num_conditioning_steps, image_size, patch_size, in_channels, hidden_size
+        self,
+        input_size,
+        patch_size,
+        in_channels,
+        hidden_size,
+        depth,
+        num_heads,
+        mlp_ratio,
     ):
         super().__init__()
         self.patch_embed = PatchEmbed(
-            image_size, patch_size, in_channels, hidden_size, bias=True
+            input_size, patch_size, in_channels, hidden_size, bias=True
         )
-        self.num_patches = self.patch_embed.num_patches
+        num_patches = self.patch_embed.num_patches
         pos_embed = get_1d_sincos_pos_embed_from_grid(
             hidden_size,
-            np.arange(self.num_patches, dtype=np.float32),
+            np.arange(num_patches + 1, dtype=np.float32),
         )
         self.pos_embed = nn.Parameter(
             torch.from_numpy(pos_embed).float().unsqueeze(0), requires_grad=False
         )
-        time_embed = get_1d_sincos_pos_embed_from_grid(
-            hidden_size,
-            np.arange(num_conditioning_steps, dtype=np.float32),
+        self.blocks = nn.ModuleList(
+            [
+                PrevObsEncoderBlock(
+                    hidden_size,
+                    num_heads,
+                    mlp_ratio=mlp_ratio,
+                )
+                for _ in range(depth)
+            ]
         )
-        self.time_embed = nn.Parameter(
-            torch.from_numpy(time_embed).float().unsqueeze(0), requires_grad=False
-        )
+        self.output_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        self.norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.fc = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, prev_obs):
-        N, steps = prev_obs.shape[:2]
-        prev_obs = einops.rearrange(prev_obs, "N steps C H W -> (N steps) C H W")
-        prev_obs = self.patch_embed(prev_obs)  # (N * steps, T, embed_dim)
-        prev_obs = prev_obs + self.pos_embed
-        prev_obs = einops.rearrange(
-            prev_obs, "(N steps) T embed_dim -> (N T) steps embed_dim", N=N, steps=steps
-        )
-        prev_obs = prev_obs + self.time_embed
-        prev_obs = einops.rearrange(
-            prev_obs,
-            "(N T) steps embed_dim -> N (steps T) embed_dim",
-            N=N,
-            T=self.num_patches,
-        )
-        return prev_obs
+    def forward(self, x):
+        B = x.size(0)
+        x = self.patch_embed(x)
+        output_token = self.output_token.expand(B, -1, -1)
+        x = torch.cat((output_token, x), dim=1)
+        x = x + self.pos_embed
+        for block in self.blocks:
+            x = block(x)
+        x = self.norm(x[:, 0])  # Take output token
+        x = self.fc(x)
+        return x
 
 
 class DiT(nn.Module):
@@ -241,6 +248,7 @@ class DiT(nn.Module):
         mlp_ratio,
         time_frequency_embedding_size,
         learn_sigma,
+        conditioning_type,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -248,22 +256,32 @@ class DiT(nn.Module):
         self.patch_size = patch_size
         self.num_heads = num_heads
 
-        self.noised_obs_embedder = PatchEmbed(
+        self.obs_embedder = PatchEmbed(
             input_size, patch_size, in_channels, hidden_size, bias=True
         )
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
-        self.enable_conditioning = num_conditioning_steps > 0
-        if self.enable_conditioning:
-            self.previous_obs_embedder = PreviousObservationEmbedder(
-                num_conditioning_steps, input_size, patch_size, in_channels, hidden_size
-            )
-            self.act_embedder = ActionEmbedder(
-                num_actions, num_conditioning_steps, hidden_size
-            )
-        num_patches = self.noised_obs_embedder.num_patches
+        self.num_conditioning_steps = num_conditioning_steps
+        self.prev_obs_encoder = PrevObsEncoder(
+            input_size,
+            patch_size,
+            in_channels,
+            hidden_size,
+            depth,
+            num_heads,
+            mlp_ratio,
+        )
+        self.act_embedder = ActionEmbedder(num_actions, hidden_size)
+        num_patches = self.obs_embedder.num_patches
+        self.num_patches = num_patches
         # Will use fixed sin-cos embedding:
         self.noised_obs_pos_embed = nn.Parameter(
             torch.zeros(1, num_patches, hidden_size), requires_grad=False
+        )
+        concat_embed = get_1d_sincos_pos_embed_from_grid(
+            hidden_size, np.arange(num_conditioning_steps, dtype=np.float32)
+        )
+        self.temporal_embed = nn.Parameter(
+            torch.from_numpy(concat_embed).float().unsqueeze(0), requires_grad=False
         )
         self.blocks = nn.ModuleList(
             [
@@ -271,26 +289,28 @@ class DiT(nn.Module):
                     hidden_size,
                     num_heads,
                     mlp_ratio=mlp_ratio,
-                    enable_conditioning=self.enable_conditioning,
+                    cross_attn=conditioning_type == "cross_attn",
                 )
                 for _ in range(depth)
             ]
         )
+        self.conditioning_type = conditioning_type
+        if self.conditioning_type == "concatenation":
+            self.concat_embed = nn.Embedding(2, hidden_size)
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
 
     def load_pretrained_weights(self, weights):
+        # This does work yet.
         key_mapping = {
             "pos_embed": "noised_obs_pos_embed",
-            "x_embedder.proj.weight": "noised_obs_embedder.proj.weight",
-            "x_embedder.proj.bias": "noised_obs_embedder.proj.bias",
+            "x_embedder.proj.weight": "obs_embedder.proj.weight",
+            "x_embedder.proj.bias": "obs_embedder.proj.bias",
         }
         for map_from, map_to in key_mapping.items():
             if map_from in weights:
                 weights[map_to] = weights.pop(map_from)
-        missing_keys, unexpected_keys = self.load_state_dict(
-            weights, strict=False
-        )  # This doesn't work yet. Fix the layers.
+        missing_keys, unexpected_keys = self.load_state_dict(weights, strict=False)
         print(
             f"Loaded pretrained weights. Missing keys: {missing_keys}. Unexpected keys: {unexpected_keys}"
         )
@@ -308,23 +328,22 @@ class DiT(nn.Module):
         # Initialize (and freeze) pos_embed by sin-cos embedding:
         noised_obs_pos_embed = get_2d_sincos_pos_embed(
             self.noised_obs_pos_embed.shape[-1],
-            int(self.noised_obs_embedder.num_patches**0.5),
+            int(self.obs_embedder.num_patches**0.5),
         )
         self.noised_obs_pos_embed.data.copy_(
             torch.from_numpy(noised_obs_pos_embed).float().unsqueeze(0)
         )
-
+        if self.conditioning_type == "concatenation":
+            nn.init.normal_(self.concat_embed.weight, std=0.02)
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
-        w = self.noised_obs_embedder.proj.weight.data
+        w = self.obs_embedder.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        nn.init.constant_(self.noised_obs_embedder.proj.bias, 0)
-        if self.enable_conditioning:
-            w = self.previous_obs_embedder.patch_embed.proj.weight.data
-            nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-            nn.init.constant_(self.previous_obs_embedder.patch_embed.proj.bias, 0)
-
-            # Initialize action embedding table:
-            nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
+        nn.init.constant_(self.obs_embedder.proj.bias, 0)
+        w = self.prev_obs_encoder.patch_embed.proj.weight.data
+        nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        nn.init.constant_(self.prev_obs_encoder.patch_embed.proj.bias, 0)
+        # Initialize action embedding table:
+        nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
@@ -347,7 +366,7 @@ class DiT(nn.Module):
         imgs: (N, H, W, C)
         """
         c = self.out_channels
-        p = self.noised_obs_embedder.patch_size[0]
+        p = self.obs_embedder.patch_size[0]
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
 
@@ -356,30 +375,47 @@ class DiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
-    def forward(self, noised_obs, t, prev_obs, prev_act):
+    def forward(self, x, t, prev_obs, prev_act):
         """
         Forward pass of DiT.
         x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
-        noised_obs = (
-            self.noised_obs_embedder(noised_obs) + self.noised_obs_pos_embed
+        x = (
+            self.obs_embedder(x) + self.noised_obs_pos_embed
         )  # (N, T, D), where T = H * W / patch_size ** 2
         t = self.t_embedder(t)  # (N, D)
-        if self.enable_conditioning:
-            prev_obs = self.previous_obs_embedder(prev_obs)  # (N, steps * T, D)
-            prev_act = self.act_embedder(prev_act)  # (N, steps, D)
-        else:
-            prev_obs = prev_act = None
+        prev_obs = einops.rearrange(prev_obs, "N steps C H W -> (N steps) C H W")
+        prev_obs = self.prev_obs_encoder(prev_obs)  # (N * steps, D)
+        prev_obs = einops.rearrange(
+            prev_obs,
+            "(N steps) D -> N steps D",
+            N=x.size(0),
+            steps=self.num_conditioning_steps,
+        )
+        prev_act = self.act_embedder(prev_act)  # (N, steps, D)
+        cond = prev_obs + prev_act
+        cond = cond + self.temporal_embed  # (N, steps, D)
+        if self.conditioning_type == "concatenation":
+            cond_embed = self.concat_embed(
+                torch.tensor(0, device=self.device).expand(x.size(0))
+            )
+            cond = cond + cond_embed.unsqueeze(1)  # (N, steps, D)
+            x_embed = self.concat_embed(
+                torch.tensor(1, device=self.device).expand(x.size(0))
+            )
+            x = x + x_embed.unsqueeze(1)  # (N, T, D)
+            x = torch.cat([cond, x], dim=1)  # (N, steps + T , D)
+            cond = None
 
         for block in self.blocks:
-            noised_obs = block(noised_obs, t, prev_obs, prev_act)  # (N, T, D)
-        noised_obs = self.final_layer(
-            noised_obs, t, prev_obs, prev_act
-        )  # (N, T, patch_size ** 2 * out_channels)
-        noised_obs = self.unpatchify(noised_obs)  # (N, out_channels, H, W)
-        return noised_obs
+            x = block(x, t, cond)
+        if self.conditioning_type == "concatenation":
+            x = x[:, -self.num_patches :]  # (N, T, D)
+        x = self.final_layer(x, t, cond)  # (N, T, patch_size ** 2 * out_channels)
+        x = self.unpatchify(x)  # (N, out_channels, H, W)
+        return x
 
     @property
     def device(self):

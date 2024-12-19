@@ -7,10 +7,11 @@ import torch
 from diffusers import AutoencoderKL
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
+from PIL import Image
 
 from src.data.episode import Episode
 from src.diffusion import create_diffusion
-from src.traj_eval import TrajectoryEvaluator
+from src.traj_eval import TrajectoryEvaluator, to_strip_of_images
 from src.utils import prepare_image_obs, save_np_video, to_numpy_video
 
 
@@ -36,12 +37,8 @@ def main(args):
         )
         if len(model_versions) == 0:
             raise ValueError("No model versions found.")
-        elif len(model_versions) == 1:
-            model_version = model_versions[0]
         else:
-            model_version = model_versions[
-                1
-            ]  # Prefer the second latest model because the most latest if a temp one
+            model_version = model_versions[0]
     else:
         model_version = args.model_version
     print("Using model version:", model_version)
@@ -60,14 +57,15 @@ def main(args):
     )
     if args.take_first_n_steps is not None:
         episode = episode.slice(0, args.take_first_n_steps)
+    num_seed_steps = (
+        run_config.diffusion_model.model.num_conditioning_steps
+        if run_config.static_dataset.guarantee_full_seqs
+        else args.num_seed_steps
+    )
     evaluator = TrajectoryEvaluator(
         diffusion=diffusion,
         vae=vae,
-        num_seed_steps=(
-            run_config.diffusion_model.model.num_conditioning_steps
-            if run_config.static_dataset.guarantee_full_seqs
-            else args.num_seed_steps
-        ),
+        num_seed_steps=num_seed_steps,
         num_conditioning_steps=run_config.diffusion_model.model.num_conditioning_steps,
         sampling_algorithm=args.sampling_algorithm,
         vae_batch_size=args.vae_batch_size,
@@ -78,13 +76,23 @@ def main(args):
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     for generation_mode in args.generation_modes:
-        generated_trajectory = evaluator.evaluate_episode(
+        generated_trajectory, psnr = evaluator.evaluate_episode(
             diffusion_model, episode, generation_mode
         )
+        print(f"generated_{generation_mode}_{args.sampling_algorithm} PSNR: {psnr:.2f}")
         save_np_video(
             generated_trajectory,
             output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
             run_config.env.fps,
+        )
+        images_strip = to_strip_of_images(
+            generated_trajectory,
+            num_seed_steps,
+            args.image_strip_num_frames,
+            args.image_strip_stride,
+        )
+        Image.fromarray(images_strip).save(
+            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.png"
         )
 
     ground_truth_trajectory = to_numpy_video(episode.obs)
@@ -93,6 +101,13 @@ def main(args):
         output_dir / f"ground_truth.mp4",
         run_config.env.fps,
     )
+    images_strip = to_strip_of_images(
+        ground_truth_trajectory,
+        num_seed_steps,
+        args.image_strip_num_frames,
+        args.image_strip_stride,
+    )
+    Image.fromarray(images_strip).save(output_dir / "ground_truth.png")
 
 
 if __name__ == "__main__":
@@ -107,8 +122,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--generation_modes",
         type=str,
-        nargs='+',
-        default=["teacher_forcing"],
+        nargs="+",
+        default=["teacher_forcing", "auto_regressive"],
         help="List of generation modes to evaluate.",
     )
     parser.add_argument(
@@ -122,7 +137,7 @@ if __name__ == "__main__":
         "--episode_path",
         type=str,
         help="Path to the episode data.",
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_0.pt",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original_act_repeat/test/episode_0.pt",
     )
     parser.add_argument(
         "--num_seed_steps", type=int, help="Number of seed steps.", default=8
@@ -131,7 +146,7 @@ if __name__ == "__main__":
         "--num_sampling_steps",
         type=int,
         help="Number of diffusion sampling steps.",
-        default=8,
+        default=50,
     )
     parser.add_argument(
         "--take_first_n_steps",
@@ -147,10 +162,20 @@ if __name__ == "__main__":
         help="Batch size for VAE encode and decode",
     )
     parser.add_argument(
+        "--image_strip_num_frames",
+        type=int,
+        default=5,
+    )
+    parser.add_argument(
+        "--image_strip_stride",
+        type=int,
+        default=5,
+    )
+    parser.add_argument(
         "--sampling_algorithm",
         type=str,
         choices=["DDIM", "DDPM"],
-        default="DDIM",
+        default="DDPM",
         help="Sampling algorithm to use for diffusion.",
     )
     args = parser.parse_args()

@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 from tqdm import tqdm
 
 from src.data.episode import Episode
@@ -38,7 +39,7 @@ class TrajectoryEvaluator:
     @torch.no_grad()
     def evaluate_episode(
         self, model, episode: Episode, generation_mode: str
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, float]:
         model.eval()
         self._vae.eval()
         obs_img = episode.obs.to(self._device)
@@ -95,12 +96,13 @@ class TrajectoryEvaluator:
             generated_trajectory_latent
         )
         generated_trajectory_img = denormalize_img(generated_trajectory_img_norm)
+        psnr = compute_psnr(obs_img[self._num_seed_steps:], generated_trajectory_img)
         full_trajectory_img = torch.cat(
             [obs_img[: self._num_seed_steps], generated_trajectory_img], dim=0
         )
 
         generated_trajectory_img_np = to_numpy_video(full_trajectory_img)
-        return generated_trajectory_img_np
+        return generated_trajectory_img_np, psnr
 
     @torch.no_grad()
     def run_vae_on_episode(
@@ -138,3 +140,50 @@ class TrajectoryEvaluator:
             obs_img_norm.append(self._vae.decode(batch / 0.18215).sample.clamp(-1, 1))
         obs_img_norm = torch.cat(obs_img_norm, dim=0)
         return obs_img_norm
+
+def compute_psnr(frames1: torch.Tensor, frames2: torch.Tensor, max_pixel_value: int = 255) -> float:
+    """
+    Compute the average PSNR between two batches of image frames.
+
+    Args:
+        frames1 (torch.Tensor): Tensor of shape (N, C, H, W) representing the first set of frames.
+        frames2 (torch.Tensor): Tensor of shape (N, C, H, W) representing the second set of frames.
+        max_pixel_value (float): The maximum pixel value (default is 1.0 for normalized images).
+
+    Returns:
+        float: The average PSNR across all frames.
+    """
+    frames1 = frames1.float()
+    frames2 = frames2.float()
+    # Check that tensors have the same shape
+    if frames1.shape != frames2.shape:
+        raise ValueError("Input tensors must have the same shape")
+
+    # Compute Mean Squared Error (MSE) for each frame
+    mse = F.mse_loss(frames1, frames2, reduction='none')  # Shape: (N, C, H, W)
+    mse_per_frame = mse.mean(dim=(1, 2, 3))  # Shape: (N,) - Mean MSE per frame
+
+    # Avoid division by zero by clamping MSE values
+    mse_per_frame = torch.clamp(mse_per_frame, min=1e-10)
+    max_pixel_value = torch.tensor(max_pixel_value, device=frames1.device, dtype=frames1.dtype)
+    # Compute PSNR per frame
+    psnr_per_frame = 10 * torch.log10((max_pixel_value ** 2) / mse_per_frame)
+
+    # Average PSNR across all frames
+    avg_psnr = psnr_per_frame.mean().item()
+
+    return avg_psnr
+
+
+def to_strip_of_images(frames, num_seed_frames, stride, num_generated_frames):
+    """
+    Convert a batch of video frames into a strip of images for visualization.
+    """
+    # Select frames from the video
+    frames = frames[
+        num_seed_frames
+        - 1 : (num_seed_frames - 1)
+        + (num_generated_frames + 1) * stride : stride
+    ]
+    horizontal_strip = np.concatenate(frames, axis=1)
+    return horizontal_strip
