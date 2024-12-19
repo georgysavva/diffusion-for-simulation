@@ -11,7 +11,8 @@ model:
   mlp_ratio: 4.0
   time_frequency_embedding_size: 256
   learn_sigma: ${diffusion.learn_sigma}
-  conditioning_type: cross_attn
+  share_patch_embed: True
+
 
 
 

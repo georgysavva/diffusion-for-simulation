@@ -237,6 +237,7 @@ class DiT(nn.Module):
         time_frequency_embedding_size,
         learn_sigma,
         separate_cross_attn,
+        share_patch_embed,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -250,9 +251,16 @@ class DiT(nn.Module):
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
         self.num_conditioning_steps = num_conditioning_steps
         self.separate_cross_attn = separate_cross_attn
+        if share_patch_embed:
+            prev_obs_embed = self.obs_embedder
+        else:
+            prev_obs_embed = PatchEmbed(
+                input_size, patch_size, in_channels, hidden_size, bias=True
+            )
         self.previous_obs_embedder = PreviousObservationEmbedder(
-            self.obs_embedder, hidden_size
+            prev_obs_embed, hidden_size
         )
+        self.share_patch_embed = share_patch_embed
         self.act_embedder = ActionEmbedder(num_actions, hidden_size)
         num_patches = self.obs_embedder.num_patches
         self.num_patches = num_patches
@@ -318,6 +326,10 @@ class DiT(nn.Module):
         w = self.obs_embedder.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
         nn.init.constant_(self.obs_embedder.proj.bias, 0)
+        if not self.share_patch_embed:
+            w = self.previous_obs_embedder.patch_embed.proj.weight.data
+            nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+            nn.init.constant_(self.previous_obs_embedder.patch_embed.proj.bias, 0)
         nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
 
         # Initialize timestep embedding MLP:

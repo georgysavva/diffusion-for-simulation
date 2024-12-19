@@ -12,6 +12,7 @@ model:
   time_frequency_embedding_size: 256
   learn_sigma: ${diffusion.learn_sigma}
   separate_cross_attn: True
+  share_patch_embed: True
 
 
 

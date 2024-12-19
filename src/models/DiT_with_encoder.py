@@ -71,7 +71,6 @@ class DiTBlock(nn.Module):
         hidden_size,
         num_heads,
         mlp_ratio,
-        cross_attn,
         **block_kwargs,
     ):
         super().__init__()
@@ -91,27 +90,23 @@ class DiTBlock(nn.Module):
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
-        self.do_cross_attn = cross_attn
-        if self.do_cross_attn:
-            self.cross_norm = nn.LayerNorm(
-                hidden_size, elementwise_affine=False, eps=1e-6
-            )
-            self.cross_attn = nn.MultiheadAttention(
-                embed_dim=hidden_size, num_heads=num_heads, batch_first=True
-            )
+
+        self.cross_norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+        )
 
     def forward(self, x, t, cond):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(t).chunk(6, dim=1)
         )
-        if self.do_cross_attn:
-            conditioned_attn, _ = self.cross_attn(
-                query=self.cross_norm(x),  # (N, T, D)
-                key=cond,  # (N, steps * T, D)
-                value=cond,  # (N, steps * T, D)
-                need_weights=False,
-            )
-            x = x + conditioned_attn  # (N, T, D)
+        conditioned_attn, _ = self.cross_attn(
+            query=self.cross_norm(x),  # (N, T, D)
+            key=cond,  # (N, steps * T, D)
+            value=cond,  # (N, steps * T, D)
+            need_weights=False,
+        )
+        x = x + conditioned_attn  # (N, T, D)
 
         x = x + gate_msa.unsqueeze(1) * self.attn(
             modulate(self.norm1(x), shift_msa, scale_msa)
@@ -181,20 +176,17 @@ class PrevObsEncoderBlock(nn.Module):
 
 
 class PrevObsEncoder(nn.Module):
+
     def __init__(
         self,
-        input_size,
-        patch_size,
-        in_channels,
+        patch_embed,
         hidden_size,
         depth,
         num_heads,
         mlp_ratio,
     ):
         super().__init__()
-        self.patch_embed = PatchEmbed(
-            input_size, patch_size, in_channels, hidden_size, bias=True
-        )
+        self.patch_embed = patch_embed
         num_patches = self.patch_embed.num_patches
         pos_embed = get_1d_sincos_pos_embed_from_grid(
             hidden_size,
@@ -248,7 +240,7 @@ class DiT(nn.Module):
         mlp_ratio,
         time_frequency_embedding_size,
         learn_sigma,
-        conditioning_type,
+        share_patch_embed,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -259,12 +251,17 @@ class DiT(nn.Module):
         self.obs_embedder = PatchEmbed(
             input_size, patch_size, in_channels, hidden_size, bias=True
         )
+        if share_patch_embed:
+            prev_obs_embedder = self.obs_embedder
+        else:
+            prev_obs_embedder = PatchEmbed(
+                input_size, patch_size, in_channels, hidden_size, bias=True
+            )
+        self.share_patch_embed = share_patch_embed
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
         self.num_conditioning_steps = num_conditioning_steps
         self.prev_obs_encoder = PrevObsEncoder(
-            input_size,
-            patch_size,
-            in_channels,
+            prev_obs_embedder,
             hidden_size,
             depth,
             num_heads,
@@ -289,14 +286,11 @@ class DiT(nn.Module):
                     hidden_size,
                     num_heads,
                     mlp_ratio=mlp_ratio,
-                    cross_attn=conditioning_type == "cross_attn",
                 )
                 for _ in range(depth)
             ]
         )
-        self.conditioning_type = conditioning_type
-        if self.conditioning_type == "concatenation":
-            self.concat_embed = nn.Embedding(2, hidden_size)
+
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
 
@@ -333,15 +327,14 @@ class DiT(nn.Module):
         self.noised_obs_pos_embed.data.copy_(
             torch.from_numpy(noised_obs_pos_embed).float().unsqueeze(0)
         )
-        if self.conditioning_type == "concatenation":
-            nn.init.normal_(self.concat_embed.weight, std=0.02)
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         w = self.obs_embedder.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
         nn.init.constant_(self.obs_embedder.proj.bias, 0)
-        w = self.prev_obs_encoder.patch_embed.proj.weight.data
-        nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        nn.init.constant_(self.prev_obs_encoder.patch_embed.proj.bias, 0)
+        if not self.share_patch_embed:
+            w = self.prev_obs_encoder.patch_embed.proj.weight.data
+            nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+            nn.init.constant_(self.prev_obs_encoder.patch_embed.proj.bias, 0)
         # Initialize action embedding table:
         nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
 
@@ -397,22 +390,9 @@ class DiT(nn.Module):
         prev_act = self.act_embedder(prev_act)  # (N, steps, D)
         cond = prev_obs + prev_act
         cond = cond + self.temporal_embed  # (N, steps, D)
-        if self.conditioning_type == "concatenation":
-            cond_embed = self.concat_embed(
-                torch.tensor(0, device=self.device).expand(x.size(0))
-            )
-            cond = cond + cond_embed.unsqueeze(1)  # (N, steps, D)
-            x_embed = self.concat_embed(
-                torch.tensor(1, device=self.device).expand(x.size(0))
-            )
-            x = x + x_embed.unsqueeze(1)  # (N, T, D)
-            x = torch.cat([cond, x], dim=1)  # (N, steps + T , D)
-            cond = None
 
         for block in self.blocks:
             x = block(x, t, cond)
-        if self.conditioning_type == "concatenation":
-            x = x[:, -self.num_patches :]  # (N, T, D)
         x = self.final_layer(x, t, cond)  # (N, T, patch_size ** 2 * out_channels)
         x = self.unpatchify(x)  # (N, out_channels, H, W)
         return x
