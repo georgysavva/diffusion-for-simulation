@@ -1,5 +1,5 @@
 model:
-  _target_: src.models.DiT_with_encoder.DiT
+  _target_: src.models.DiT_concat.DiT
   num_actions: ${env.num_actions}
   num_conditioning_steps: 7
   input_size: 32
@@ -11,12 +11,13 @@ model:
   mlp_ratio: 4.0
   time_frequency_embedding_size: 256
   learn_sigma: ${diffusion.learn_sigma}
-  conditioning_type: cross_attn
+  learn_temporal_embedding: True
+
 
 
 training:
   train_batch_size: 128
-  eval_batch_size: 256
+  eval_batch_size: 128
   steps_per_epoch: 2000
   num_epochs: 1000000
   lr_warmup_steps: 100
