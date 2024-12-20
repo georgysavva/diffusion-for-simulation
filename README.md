@@ -47,13 +47,22 @@ This repository is based on the [diamond](https://github.com/eloialonso/diamond/
 
     `python scripts/collect_doom_data.py --save_path {data_dir}/test --num_episodes 200`
 
-3. Preprocess game play data with the VAE
+3. Preprocess gameplay data with the VAE
 
 `python scripts/preprocess_data_with_vae.py --data_path {data_dir} --save_path {save_dir}`
 
 4. Train the diffusion model. You will need to update the vae and data paths in the hydra configs
 
-`python src/main.py experiment_name=baseline`
+To train the concatenation conditioning single-frame prediction model:
+`git checkout main && python src/main.py experiment_name=baseline`
+
+To train the cross-attention conditioning single-frame prediction model:
+`git checkout main && python src/main.py experiment_name=baseline`
+
+To train the video generation multi-frame prediction model:
+`git checkout jack/vda_model && python src/main_action_frame_newdata.py experiment_name=main_action_frame_newdata`
+
+For each command, make sure to modify the hydra configs parameters `project_storage_base_path` for the output directory and `data_path` for VAE preprocessed data.
 
 ## Inference
 
