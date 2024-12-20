@@ -175,15 +175,13 @@ def compute_psnr(frames1: torch.Tensor, frames2: torch.Tensor, max_pixel_value: 
     return avg_psnr
 
 
-def to_strip_of_images(frames, num_seed_frames, stride, num_generated_frames):
+def to_strip_of_images(frames, num_seed_frames, stride, num_frames):
     """
     Convert a batch of video frames into a strip of images for visualization.
     """
     # Select frames from the video
     frames = frames[
-        num_seed_frames
-        - 1 : (num_seed_frames - 1)
-        + (num_generated_frames + 1) * stride : stride
+        num_seed_frames - 1 : (num_seed_frames - 1) + num_frames * stride : stride
     ]
     horizontal_strip = np.concatenate(frames, axis=1)
     return horizontal_strip

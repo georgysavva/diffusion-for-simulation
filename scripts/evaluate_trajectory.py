@@ -146,7 +146,7 @@ if __name__ == "__main__":
         "--num_sampling_steps",
         type=int,
         help="Number of diffusion sampling steps.",
-        default=50,
+        default=8,
     )
     parser.add_argument(
         "--take_first_n_steps",
@@ -164,18 +164,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--image_strip_num_frames",
         type=int,
-        default=5,
+        default=10,
     )
     parser.add_argument(
         "--image_strip_stride",
         type=int,
-        default=5,
+        default=10,
     )
     parser.add_argument(
         "--sampling_algorithm",
         type=str,
         choices=["DDIM", "DDPM"],
-        default="DDPM",
+        default="DDIM",
         help="Sampling algorithm to use for diffusion.",
     )
     args = parser.parse_args()
