@@ -65,8 +65,4 @@ To evaluate your single-frame prediction model on a trajectory:
 `git checkout final_report && python scripts/evaluate_trajectory --run_dir {training_run_dir} --vae_decoder_path {finetuned_decoder} --episode_path {test_episode}`
 
 To evaluate your video-generation model on a trajectory:
-`git checkout jack/vda_model && python scripts/evaluate_trajectory_vda.py \
-  --run_dir {training_run_dir} \
-  --model_version {model_file_name} \
-  --episode_starts_path {file_with_episode_start_indices} \
-  --episodes_path {file_with_episode_paths}`
+`git checkout jack/vda_model && python scripts/evaluate_trajectory_vda.py --run_dir {training_run_dir} --model_version {model_file_name} --episode_starts_path {file_with_episode_start_indices} --episodes_path {file_with_episode_paths}`
