@@ -83,7 +83,7 @@ def main(args):
         save_np_video(
             generated_trajectory,
             output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
-            run_config.env.fps,
+            args.video_fps,
         )
         images_strip = to_strip_of_images(
             generated_trajectory,
@@ -99,7 +99,7 @@ def main(args):
     save_np_video(
         ground_truth_trajectory,
         output_dir / f"ground_truth.mp4",
-        run_config.env.fps,
+        args.video_fps,
     )
     images_strip = to_strip_of_images(
         ground_truth_trajectory,
@@ -170,6 +170,11 @@ if __name__ == "__main__":
         "--image_strip_stride",
         type=int,
         default=10,
+    )
+    parser.add_argument(
+        "--video_fps",
+        type=int,
+        default=15,
     )
     parser.add_argument(
         "--sampling_algorithm",
