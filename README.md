@@ -63,6 +63,5 @@ For each command, make sure to modify the hydra configs parameters `project_stor
 
 ## Inference
 
-1. To evaluate your model on a trajectory, for models that predict one frame at a time, run
-
-`python scripts/evaluate_trajectory --run_dir {training_run_dir} --vae_decoder_path {finetuned_decoder} --episode_path {test_episode}`
+To evaluate your model on a trajectory:
+`git checkout final_report && python scripts/evaluate_trajectory --run_dir {training_run_dir} --vae_decoder_path {finetuned_decoder} --episode_path {test_episode}`
