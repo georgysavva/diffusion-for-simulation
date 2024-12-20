@@ -53,14 +53,11 @@ This repository is based on the [diamond](https://github.com/eloialonso/diamond/
 
 4. Train the diffusion model. You will need to update the vae and data paths in the hydra configs
 
-To train the concatenation conditioning single-frame prediction model:
-`git checkout main && python src/main.py experiment_name=baseline`
+- To train the concatenation conditioning single-frame prediction model: `git checkout main && python src/main.py experiment_name=baseline`
 
-To train the cross-attention conditioning single-frame prediction model:
-`git checkout main && python src/main.py experiment_name=baseline`
+- To train the cross-attention conditioning single-frame prediction model: `git checkout main && python src/main.py experiment_name=baseline`
 
-To train the video generation multi-frame prediction model:
-`git checkout jack/vda_model && python src/main_action_frame.py experiment_name=baseline`
+- To train the video generation multi-frame prediction model: `git checkout jack/vda_model && python src/main_action_frame.py experiment_name=baseline`
 
 For each command, make sure to modify the hydra configs parameters `project_storage_base_path` for the output directory and `data_path` for VAE preprocessed data.
 
