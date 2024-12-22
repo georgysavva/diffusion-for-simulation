@@ -50,7 +50,7 @@ def main(args):
         )
     )
 
-    episode = Episode.load(args.episode_path)
+    episode = Episode.load(args.episode_path, map_location=device)
     episode_name = os.path.splitext(os.path.basename(args.episode_path))[0]
     episode.obs = prepare_image_obs(
         episode.obs, run_config.static_dataset.image_resolution

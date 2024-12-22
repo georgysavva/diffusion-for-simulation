@@ -82,11 +82,13 @@ class Trainer:
         self.train_dataset = Dataset(
             p / "train",
             guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
+            device=self._device,
             cache_in_ram=False,
         )
         self.test_dataset = Dataset(
             p / "test",
             cfg.static_dataset.guarantee_full_seqs,
+            device=self._device,
             cache_in_ram=True,
         )
 
@@ -193,7 +195,7 @@ class Trainer:
         )
         vae.eval()
         episode_path = Path(cfg.inference.episode_path)
-        episode = Episode.load(episode_path)
+        episode = Episode.load(episode_path, map_location=self._device)
         episode.obs = prepare_image_obs(
             episode.obs, cfg.static_dataset.image_resolution
         )

@@ -28,9 +28,7 @@ class Episode:
 
     @classmethod
     def load(cls, path: Path, map_location: Optional[torch.device] = None) -> Episode:
-        data = torch.load(
-            path, map_location=map_location or torch.device("cpu"), weights_only=True
-        )
+        data = torch.load(path, map_location=map_location, weights_only=True)
         obs = data["observations"]
         act = data["actions"].to(torch.int32)
         rew = data["rewards"]

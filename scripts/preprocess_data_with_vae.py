@@ -17,7 +17,7 @@ def preprocess_data_with_vae(load_path, save_path, vae, resolution, batch_size):
 
     episode_files = sorted(load_path.glob("episode_*.pt"))
     for episode_file in tqdm(episode_files):
-        episode = Episode.load(episode_file)
+        episode = Episode.load(episode_file, map_location=vae.device)
         obs = episode.obs
 
         latents = []
