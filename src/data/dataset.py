@@ -21,7 +21,6 @@ class Dataset(TorchDataset):
         self,
         directory: Path,
         guarantee_full_seqs: bool,
-        device: torch.device,
         cache_in_ram: bool = False,
         use_manager: bool = False,
     ) -> None:
@@ -37,7 +36,6 @@ class Dataset(TorchDataset):
             [ep["length"] for ep in self.episodes_info["episodes"]]
         )
         self._guarantee_full_seqs = guarantee_full_seqs
-        self._device = device
 
     @property
     def num_episodes(self) -> int:
@@ -56,9 +54,7 @@ class Dataset(TorchDataset):
         if self._cache_in_ram and episode_id in self._cache:
             episode = self._cache[episode_id]
         else:
-            episode = Episode.load(
-                self.get_episode_path(episode_id), map_location=self._device
-            )
+            episode = Episode.load(self.get_episode_path(episode_id))
             episode.obs = episode.obs.mul_(0.18215)
             if self._cache_in_ram:
                 self._cache[episode_id] = episode
