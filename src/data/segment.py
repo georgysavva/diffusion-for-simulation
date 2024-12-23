@@ -8,7 +8,7 @@ import torch
 
 @dataclass
 class SegmentId:
-    episode_id: Union[int, str]
+    episode_id: int
     start: int
     stop: int
 
@@ -17,4 +17,6 @@ class SegmentId:
 class Segment:
     obs: torch.Tensor
     act: torch.IntTensor
-    id: SegmentId
+
+    def __len__(self) -> int:
+        return self.obs.size(0)

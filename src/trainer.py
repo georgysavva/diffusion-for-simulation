@@ -82,12 +82,10 @@ class Trainer:
         self.train_dataset = Dataset(
             p / "train",
             guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
-            cache_in_ram=False,
         )
         self.test_dataset = Dataset(
             p / "test",
             cfg.static_dataset.guarantee_full_seqs,
-            cache_in_ram=True,
         )
 
         # Create models
