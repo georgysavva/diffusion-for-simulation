@@ -1,6 +1,6 @@
 id: doom
 num_actions: 6 # 5 buttons + 1 no-op
 data_path: ${common.project_storage_base_path}/data/doom/
-data_path_latent: ${env.data_path}/latent_chunked/
+data_path_latent: ${env.data_path}/latent/
 data_path_original: ${env.data_path}/original/
 fps: 35

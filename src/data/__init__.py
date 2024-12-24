@@ -7,5 +7,4 @@ from .dataset import (
     make_segment,
 )
 from .episode import Episode
-from .episode_partition import EpisodePartition
 from .segment import Segment, SegmentId
