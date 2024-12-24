@@ -100,14 +100,18 @@ class TestDatasetTraverser:
     def __init__(
         self,
         dataset: Dataset,
-        batch_num_samples: int,
+        batch_size: int,
         seq_length: int,
-        subsample_rate: int,
+        num_batches: int,
     ) -> None:
         self.dataset = dataset
-        self.batch_num_samples = batch_num_samples
+        self.batch_size = batch_size
         self.seq_length = seq_length
-        self.subsample_rate = subsample_rate
+        self.num_batches = num_batches
+        num_total_samples = (self.dataset.lengths - seq_length + 1).sum()
+        self.subsample_rate = math.ceil(
+            num_total_samples / (self.num_batches * self.batch_size)
+        )
 
     def __len__(self):
         return math.ceil(
@@ -123,7 +127,7 @@ class TestDatasetTraverser:
                     for episode_id in range(self.dataset.num_episodes)
                 ]
             )
-            / self.batch_num_samples
+            / self.batch_size
         )
 
     def __iter__(self) -> Generator[Batch, None, None]:
@@ -141,9 +145,9 @@ class TestDatasetTraverser:
                 )
                 chunks.append(segment)
 
-            while len(chunks) >= self.batch_num_samples:
-                yield collate_segments_to_batch(chunks[: self.batch_num_samples])
-                chunks = chunks[self.batch_num_samples :]
+            while len(chunks) >= self.batch_size:
+                yield collate_segments_to_batch(chunks[: self.batch_size])
+                chunks = chunks[self.batch_size :]
 
         if len(chunks) > 0:
             yield collate_segments_to_batch(chunks)

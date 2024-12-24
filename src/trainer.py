@@ -167,7 +167,7 @@ class Trainer:
             self.test_dataset,
             c.eval_batch_size,
             seq_length,
-            cfg.evaluation.subsample_rate,
+            cfg.evaluation.num_sample_batches,
         )
 
         # Training state (things to be saved/restored)
@@ -217,7 +217,7 @@ class Trainer:
 
     def run(self) -> None:
 
-        num_epochs = self._cfg.diffusion_model.training.num_epochs
+        num_epochs = self._cfg.training.num_epochs
 
         while self.epoch < num_epochs:
             self.epoch += 1
@@ -270,8 +270,7 @@ class Trainer:
     def train_diffusion_model(self):
         self.diffusion_model.train()
         self.diffusion_model.zero_grad()
-        cfg = self._cfg.diffusion_model.training
-        num_steps = cfg.steps_per_epoch
+        num_steps = self._cfg.training.steps_per_epoch
         model = self._diffusion_model
         opt = self.opt
         lr_sched = self.lr_sched

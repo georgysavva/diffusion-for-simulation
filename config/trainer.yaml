@@ -41,11 +41,13 @@ static_dataset:
 
 training:
   should: True
+  steps_per_epoch: 2000
+  num_epochs: 1000000
   num_workers_data_loaders: 8
 
 evaluation:
   should: True
-  subsample_rate: 10
+  num_sample_batches: 200
   every: 1
 
 inference:
