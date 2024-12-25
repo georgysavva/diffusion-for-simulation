@@ -332,13 +332,13 @@ class Trainer:
                 generated_trajectory,
                 output_dir
                 / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.mp4",
-                fps=self._cfg.env.fps,
+                fps=self._cfg.inference.video_fps,
             )
         ground_truth_trajectory = to_numpy_video(self.inference_episode.obs)
         save_np_video(
             ground_truth_trajectory,
             output_dir / "ground_truth.mp4",
-            fps=self._cfg.env.fps,
+            fps=self._cfg.inference.video_fps,
         )
 
     def save_checkpoint(self) -> None:
