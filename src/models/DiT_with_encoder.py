@@ -71,6 +71,7 @@ class DiTBlock(nn.Module):
         hidden_size,
         num_heads,
         mlp_ratio,
+        separate_cross_attn,
         **block_kwargs,
     ):
         super().__init__()
@@ -91,22 +92,58 @@ class DiTBlock(nn.Module):
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
 
-        self.cross_norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.cross_attn = nn.MultiheadAttention(
-            embed_dim=hidden_size, num_heads=num_heads, batch_first=True
-        )
+        self.separate_cross_attn = separate_cross_attn
+        if separate_cross_attn:
+            self.cross_obs_norm = nn.LayerNorm(
+                hidden_size, elementwise_affine=False, eps=1e-6
+            )
+            self.cross_obs_attn = nn.MultiheadAttention(
+                embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+            )
+            self.cross_act_norm = nn.LayerNorm(
+                hidden_size, elementwise_affine=False, eps=1e-6
+            )
+            self.cross_attn_act = nn.MultiheadAttention(
+                embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+            )
+        else:
+            self.cross_norm = nn.LayerNorm(
+                hidden_size, elementwise_affine=False, eps=1e-6
+            )
+            self.cross_attn = nn.MultiheadAttention(
+                embed_dim=hidden_size, num_heads=num_heads, batch_first=True
+            )
 
-    def forward(self, x, t, cond):
+    def forward(self, x, t, cond, prev_obs, prev_act):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(t).chunk(6, dim=1)
         )
-        conditioned_attn, _ = self.cross_attn(
-            query=self.cross_norm(x),  # (N, T, D)
-            key=cond,  # (N, steps * T, D)
-            value=cond,  # (N, steps * T, D)
-            need_weights=False,
-        )
-        x = x + conditioned_attn  # (N, T, D)
+
+        if self.separate_cross_attn:
+            # Cross-Attention on prev_obs
+            obs_conditioned, _ = self.cross_obs_attn(
+                query=self.cross_obs_norm(x),  # (N, T, D)
+                key=prev_obs,  # (N, steps * T, D)
+                value=prev_obs,  # (N, steps * T, D)
+                need_weights=False,
+            )
+            x = x + obs_conditioned  # (N, T, D)
+            # Cross-Attention on prev_act
+            act_conditioned, _ = self.cross_attn_act(
+                query=self.cross_act_norm(x),  # (N, T, D)
+                key=prev_act,  # (N, steps, D)
+                value=prev_act,  # (N, steps, D)
+                need_weights=False,
+            )
+            x = x + act_conditioned  # (N, T, D)
+        else:
+            conditioned, _ = self.cross_attn(
+                query=self.cross_norm(x),  # (N, T, D)
+                key=cond,  # (N, steps, D)
+                value=cond,  # (N, steps, D)
+                need_weights=False,
+            )
+            x = x + conditioned  # (N, T, D)
 
         x = x + gate_msa.unsqueeze(1) * self.attn(
             modulate(self.norm1(x), shift_msa, scale_msa)
@@ -241,6 +278,7 @@ class DiT(nn.Module):
         time_frequency_embedding_size,
         learn_sigma,
         share_patch_embed,
+        separate_cross_attn,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -258,6 +296,7 @@ class DiT(nn.Module):
                 input_size, patch_size, in_channels, hidden_size, bias=True
             )
         self.share_patch_embed = share_patch_embed
+        self.separate_cross_attn = separate_cross_attn
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
         self.num_conditioning_steps = num_conditioning_steps
         self.prev_obs_encoder = PrevObsEncoder(
@@ -286,6 +325,7 @@ class DiT(nn.Module):
                     hidden_size,
                     num_heads,
                     mlp_ratio=mlp_ratio,
+                    separate_cross_attn=separate_cross_attn,
                 )
                 for _ in range(depth)
             ]
@@ -388,11 +428,17 @@ class DiT(nn.Module):
             steps=self.num_conditioning_steps,
         )
         prev_act = self.act_embedder(prev_act)  # (N, steps, D)
-        cond = prev_obs + prev_act
-        cond = cond + self.temporal_embed  # (N, steps, D)
+        if self.separate_cross_attn:
+            prev_obs = prev_obs + self.temporal_embed  # (N, steps, D)
+            prev_act = prev_act + self.temporal_embed  # (N, steps, D)
+            cond = None
+        else:
+            cond = prev_obs + prev_act
+            cond = cond + self.temporal_embed  # (N, steps, D)
+            prev_act = prev_obs = None
 
         for block in self.blocks:
-            x = block(x, t, cond)
+            x = block(x, t, cond, prev_obs, prev_act)
         x = self.final_layer(x, t, cond)  # (N, T, patch_size ** 2 * out_channels)
         x = self.unpatchify(x)  # (N, out_channels, H, W)
         return x
