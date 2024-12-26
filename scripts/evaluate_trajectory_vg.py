@@ -1,11 +1,3 @@
-# python scripts/evaluate_trajectory_vda.py \
-#   --run_dir /scratch/gs4288/shared/diffusion_for_simulation/runs/2024.12.11T22-54_main_action_frame_xl_pretrained_short \
-#   --model_version diffusion_model_epoch_00012.pt \
-#   --clip_denoised \
-#   --num_sampling_steps 250 \
-#   --sampling_algorithm DDPM \
-#   --teacherforcing
-
 import argparse
 from pathlib import Path
 
