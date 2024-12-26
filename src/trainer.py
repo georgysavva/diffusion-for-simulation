@@ -21,8 +21,6 @@ from src.data import (
     collate_segments_to_batch,
 )
 from src.diffusion import create_diffusion
-from src.models.DiT import DiT
-from src.models.VDA import VDA
 from src.utils import (
     build_ddp_wrapper,
     count_parameters,
@@ -54,9 +52,10 @@ class Trainer:
         set_seed(torch.seed() % 10**9)
 
         # Device
-        self._device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu", self._rank
-        )
+        if torch.cuda.is_available():
+            self._device = torch.device("cuda", self._rank)
+        else:
+            self._device = torch.device("cpu")
         print(f"Starting on {self._device}")
         self._use_cuda = self._device.type == "cuda"
         if self._use_cuda:
@@ -174,6 +173,7 @@ class Trainer:
         )
 
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(self._device)
+        print(cfg.inference.vae_path)
         vae.decoder.load_state_dict(torch.load(cfg.inference.vae_path, weights_only=True, map_location=self._device))
         vae.eval()
         self.vae = vae
@@ -341,18 +341,9 @@ class Trainer:
         obs, act = batch.obs, batch.act
         n = obs.shape[0]
         t = torch.randint(0, self.diffusion.num_timesteps, (n,), device=self._device)
-        if isinstance(model, DiT):
-            prev_obs = obs[:, :-1]
-            prev_act = act[:, :-1]
-            model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
-            current_obs = obs[:, -1]
-            loss_dict = self.diffusion.training_losses(model, current_obs, t, model_kwargs)
-        elif isinstance(model, VDA):
-            prev_act = act[:, :-1]
-            model_kwargs = dict(prev_act=prev_act)
-            loss_dict = self.diffusion.training_losses(model, obs, t, model_kwargs)
-        else:
-            raise ValueError(f'{type(model)} is not recognized')
+        prev_act = act[:, :-1]
+        model_kwargs = dict(prev_act=prev_act)
+        loss_dict = self.diffusion.training_losses(model, obs, t, model_kwargs)
 
         loss = loss_dict["loss"].mean()
         mse = loss_dict['mse'].mean()

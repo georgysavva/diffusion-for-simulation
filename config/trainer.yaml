@@ -22,7 +22,8 @@ experiment_name: "" # Should be set through CLI
 common:
   devices: 0  # int, list of int, cpu, or all
   seed: null
-  project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation # Set this.
+  # Set this:
+  project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation
   run_name: ${now:%Y.%m.%d}T${now:%H-%M}_${experiment_name}
   run_dir: ${common.project_storage_base_path}/runs/${common.run_name}
 
@@ -50,7 +51,8 @@ inference:
   subsample_rate: 100000
   every: 1
   num_sampling_steps: 250
-  vae_path: /scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth # Set this.
+  # Set this:
+  vae_path: /scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth
   num_log_wandb: 20
   max_num_episodes: 1000000
 
