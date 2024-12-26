@@ -53,16 +53,16 @@ This repository is based on the [diamond](https://github.com/eloialonso/diamond/
 
 4. Train the diffusion model. You will need to update  `project_storage_base_path` for the output directory, the vae decoder path, and `data_path` to `{data_dir}` in hydra configs
 
-- To train the concatenation conditioning single-frame prediction model: `git checkout final-report && python src/main.py diffusion_model=DiT_B_4_concat experiment_name=DiT_B_4_concat`
+- To train the concatenation conditioning single-frame prediction model: `python src/main.py diffusion_model=DiT_B_4_concat experiment_name=DiT_B_4_concat`
 
-- To train the cross-attention conditioning single-frame prediction model: `git checkout final-report && python src/main.py diffusion_model=DiT_B_4_cross_attn experiment_name=DiT_B_4_cross_attn`
+- To train the cross-attention conditioning single-frame prediction model: `python src/main.py diffusion_model=DiT_B_4_cross_attn experiment_name=DiT_B_4_cross_attn`
 
-- To train the video generation multi-frame prediction model: `git checkout jack/vda_model && python src/main_action_frame.py experiment_name=baseline`
+- To train the video generation multi-frame prediction model: `git checkout vg-model && python src/main.py experiment_name=DiT_VG`
 
 ## Inference
 
 To evaluate your single-frame prediction model on a trajectory:
-`git checkout final_report && python scripts/evaluate_trajectory --run_dir {training_run_dir} --vae_decoder_path {finetuned_decoder} --episode_path {test_episode}`
+`python scripts/evaluate_trajectory --run_dir {training_run_dir} --vae_decoder_path {finetuned_decoder} --episode_path {test_episode}`
 
 To evaluate your video-generation model on a trajectory:
-`git checkout jack/vda_model && python scripts/evaluate_trajectory_vda.py --run_dir {training_run_dir} --model_version {model_file_name} --episode_starts_path {file_with_episode_start_indices} --episodes_path {file_with_episode_paths}`
+`git checkout vg-model && python scripts/evaluate_trajectory_vg.py --run_dir {training_run_dir} --model_version {model_file_name} --episodes_path {file_with_episode_paths}`
