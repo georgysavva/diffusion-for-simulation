@@ -1,1 +1,0 @@
-/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original_act_repeat/test/episode_0.pt

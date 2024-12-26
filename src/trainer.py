@@ -5,9 +5,12 @@ from pathlib import Path
 
 import torch
 import torch.distributed as dist
+from diffusers import AutoencoderKL
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
+from PIL import Image
 from torch.utils.data import DataLoader
+from torchvision.utils import make_grid
 from tqdm import tqdm, trange
 
 import wandb
@@ -15,10 +18,11 @@ from src.data import (
     BatchSampler,
     Dataset,
     TestDatasetTraverser,
-    TestDatasetTraverserNew,
     collate_segments_to_batch,
 )
 from src.diffusion import create_diffusion
+from src.models.DiT import DiT
+from src.models.VDA import VDA
 from src.utils import (
     build_ddp_wrapper,
     count_parameters,
@@ -27,12 +31,6 @@ from src.utils import (
     set_seed,
     wandb_log,
 )
-from src.models.DiT import DiT
-from src.models.VDA import VDA
-
-from diffusers import AutoencoderKL
-from torchvision.utils import make_grid
-from PIL import Image
 
 
 class Trainer:
@@ -159,27 +157,21 @@ class Trainer:
             batch_sampler=batch_sampler,
         )
 
-        if cfg.evaluation.dataloader_name == 'TestDatasetTraverser':
-            self._data_loader_test = TestDatasetTraverser(
-                self.test_dataset, c.train_batch_size, seq_length
-            )
-        elif cfg.evaluation.dataloader_name == 'TestDatasetTraverserNew':
-            self._data_loader_test = TestDatasetTraverserNew(
-                self.test_dataset, c.eval_batch_size, seq_length, cfg.evaluation.subsample_rate, cfg.evaluation.max_num_episodes,
-            )
-        else:
-            raise ValueError(f'{cfg.evaluation.dataloader_name} is not recognized')
+        self._data_loader_test = TestDatasetTraverser(
+            self.test_dataset,
+            c.eval_batch_size,
+            seq_length,
+            cfg.evaluation.subsample_rate,
+            cfg.evaluation.max_num_episodes,
+        )
 
-        if cfg.inference.dataloader_name == 'TestDatasetTraverser':
-            self._data_loader_inference = TestDatasetTraverser(
-                self.test_dataset, c.train_batch_size, seq_length
-            )
-        elif cfg.inference.dataloader_name == 'TestDatasetTraverserNew':
-            self._data_loader_inference = TestDatasetTraverserNew(
-                self.test_dataset, c.eval_batch_size, seq_length, cfg.inference.subsample_rate, cfg.inference.max_num_episodes
-            )
-        else:
-            raise ValueError(f'{cfg.inference.dataloader_name} is not recognized')
+        self._data_loader_inference = TestDatasetTraverser(
+            self.test_dataset,
+            c.eval_batch_size,
+            seq_length,
+            cfg.inference.subsample_rate,
+            cfg.inference.max_num_episodes,
+        )
 
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(self._device)
         vae.decoder.load_state_dict(torch.load(cfg.inference.vae_path, weights_only=True, map_location=self._device))

@@ -82,23 +82,36 @@ class DiTBlock(nn.Module):
     """
     A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
     """
+
     def __init__(self, hidden_size, num_heads, mlp_ratio, **block_kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
+        self.attn = Attention(
+            hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs
+        )
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
-        self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
+        self.mlp = Mlp(
+            in_features=hidden_size,
+            hidden_features=mlp_hidden_dim,
+            act_layer=approx_gelu,
+            drop=0,
+        )
         self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(hidden_size, 6 * hidden_size, bias=True)
+            nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
 
     def forward(self, x, c):
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
-        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
-        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
+            self.adaLN_modulation(c).chunk(6, dim=1)
+        )
+        x = x + gate_msa.unsqueeze(1) * self.attn(
+            modulate(self.norm1(x), shift_msa, scale_msa)
+        )
+        x = x + gate_mlp.unsqueeze(1) * self.mlp(
+            modulate(self.norm2(x), shift_mlp, scale_mlp)
+        )
         return x
 
 
@@ -106,13 +119,15 @@ class FinalLayer(nn.Module):
     """
     The final layer of DiT.
     """
+
     def __init__(self, hidden_size, patch_size, out_channels):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
+        self.linear = nn.Linear(
+            hidden_size, patch_size * patch_size * out_channels, bias=True
+        )
         self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(hidden_size, 2 * hidden_size, bias=True)
+            nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         )
 
     def forward(self, x, c):
@@ -122,7 +137,7 @@ class FinalLayer(nn.Module):
         return x
 
 
-class VDA(nn.Module):
+class DiT(nn.Module):
     """
     Diffusion model with a Transformer backbone.
     """
@@ -147,12 +162,16 @@ class VDA(nn.Module):
         super().__init__()
         self.learn_sigma = learn_sigma
         self.stacked = stacked
-        self.in_channels = in_channels * (num_conditioning_steps + 1) if stacked else in_channels
+        self.in_channels = (
+            in_channels * (num_conditioning_steps + 1) if stacked else in_channels
+        )
         self.out_channels = self.in_channels * 2 if learn_sigma else self.in_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
 
-        self.x_embedder = PatchEmbed(input_size, patch_size, self.in_channels, hidden_size, bias=True)
+        self.x_embedder = PatchEmbed(
+            input_size, patch_size, self.in_channels, hidden_size, bias=True
+        )
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
 
         self.frame_embedder, self.action_embedder = None, None
@@ -163,11 +182,16 @@ class VDA(nn.Module):
 
         num_patches = self.x_embedder.num_patches
         # Will use fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
+        self.pos_embed = nn.Parameter(
+            torch.zeros(1, num_patches, hidden_size), requires_grad=False
+        )
 
-        self.blocks = nn.ModuleList([
-            DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)
+                for _ in range(depth)
+            ]
+        )
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
 
@@ -177,24 +201,28 @@ class VDA(nn.Module):
 
         not_in_loaded = {n for n in model_param_names if n not in loaded_weights}
         not_in_model = {n for n in loaded_weights if n not in model_param_names}
-        print('parameters not in loaded:', not_in_loaded)
-        print('parameters not in model:', not_in_model)
+        print("parameters not in loaded:", not_in_loaded)
+        print("parameters not in model:", not_in_model)
 
-        allowed_different_weights = ['x_embedder.proj.weight', 'final_layer.linear.weight', 'final_layer.linear.bias']
+        allowed_different_weights = [
+            "x_embedder.proj.weight",
+            "final_layer.linear.weight",
+            "final_layer.linear.bias",
+        ]
         for n, p in self.named_parameters():
             if n in loaded_weights:
                 if p.shape != loaded_weights[n].shape:
                     if n not in allowed_different_weights:
-                        raise ValueError(f'{n} has wrong shape')
+                        raise ValueError(f"{n} has wrong shape")
                     else:
-                        print(f'skipped weight loading for {n}')
+                        print(f"skipped weight loading for {n}")
                 else:
                     requires_grad = p.requires_grad
                     p.requires_grad = False
                     p.copy_(loaded_weights[n])
                     p.requires_grad = requires_grad
 
-        print('done loading pretrained weights from', pretrained_weights_path)
+        print("done loading pretrained weights from", pretrained_weights_path)
 
     def initialize_weights(self):
         # Initialize transformer layers:
@@ -203,10 +231,13 @@ class VDA(nn.Module):
                 torch.nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
+
         self.apply(_basic_init)
 
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5))
+        pos_embed = get_2d_sincos_pos_embed(
+            self.pos_embed.shape[-1], int(self.x_embedder.num_patches**0.5)
+        )
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
@@ -266,25 +297,27 @@ class VDA(nn.Module):
         else:
             xs = []
             for frame_i in range(num_frame):
-                x_emb = self.x_embedder(x[:, frame_i]) + self.pos_embed # (N, T, D)
+                x_emb = self.x_embedder(x[:, frame_i]) + self.pos_embed  # (N, T, D)
                 # action embedding
                 if self.action_embedder is not None and frame_i < num_frame - 1:
-                    action_emb = self.action_embedder(prev_act[:, frame_i]) # (N, D)
+                    action_emb = self.action_embedder(prev_act[:, frame_i])  # (N, D)
                     x_emb += action_emb[:, None, :]
                 # frame embedding
                 if self.frame_embedder is not None:
-                    frame_emb = self.frame_embedder(torch.tensor(frame_i, device=x.device)) # (D,)
+                    frame_emb = self.frame_embedder(
+                        torch.tensor(frame_i, device=x.device)
+                    )  # (D,)
                     x_emb += frame_emb[None, None, ...]
                 xs.append(x_emb)
             num_patch_per_frame = x_emb.shape[1]
             x = torch.concat(xs, dim=1)
 
         # (N, T, D), where T = H * W / patch_size ** 2
-        t = self.t_embedder(t)                   # (N, D)
+        t = self.t_embedder(t)  # (N, D)
         for block in self.blocks:
-            x = block(x, t)                      # (N, T, D)
+            x = block(x, t)  # (N, T, D)
 
-        x = self.final_layer(x, t)                # (N, T, patch_size ** 2 * out_channels)
+        x = self.final_layer(x, t)  # (N, T, patch_size ** 2 * out_channels)
 
         if self.stacked:
             x = self.unpatchify(x)
@@ -293,9 +326,9 @@ class VDA(nn.Module):
             x_split = torch.split(x, num_patch_per_frame, dim=1)
             xs = []
             for x in x_split:
-                x = self.unpatchify(x) # (N, out_channels, H, W)
+                x = self.unpatchify(x)  # (N, out_channels, H, W)
                 xs.append(x)
-            x = torch.stack(xs, dim=1) # (N, num_frames, out_channels, H, W)
+            x = torch.stack(xs, dim=1)  # (N, num_frames, out_channels, H, W)
 
         return x
 
