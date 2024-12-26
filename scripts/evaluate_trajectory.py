@@ -112,7 +112,15 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate trajectory quality.")
-    parser.add_argument("--run_dir", type=str, help="Path to the directory of the run.")
+    parser.add_argument(
+        "--run_dir", type=str, required=True, help="Path to the directory of the run."
+    )
+    parser.add_argument(
+        "--episode_path",
+        type=str,
+        help="Path to the episode data.",
+        required=True,
+    )
     parser.add_argument(
         "--model_version",
         type=str,
@@ -130,15 +138,9 @@ if __name__ == "__main__":
         "--vae_decoder_path",
         type=str,
         help="Path to the VAE model.",
-        default="/scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth",
+        required=True,
     )
 
-    parser.add_argument(
-        "--episode_path",
-        type=str,
-        help="Path to the episode data.",
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_0.pt",
-    )
     parser.add_argument(
         "--num_seed_steps", type=int, help="Number of seed steps.", default=8
     )

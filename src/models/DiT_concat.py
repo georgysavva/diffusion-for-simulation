@@ -214,7 +214,6 @@ class DiT(nn.Module):
         self.initialize_weights()
 
     def load_pretrained_weights(self, weights):
-        # This doesn't work yet. Fix the layers.
         key_mapping = {
             "x_embedder.proj.weight": "obs_embedder.proj.weight",
             "x_embedder.proj.bias": "obs_embedder.proj.bias",

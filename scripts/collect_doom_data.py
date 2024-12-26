@@ -1,12 +1,13 @@
 import argparse  # Add argparse import
 import json
 import os
+import re
 
 import cv2
 import gymnasium as gym
 import torch
 from tqdm import tqdm
-from vizdoom import gymnasium_wrapper  # to register envs
+from vizdoom import gymnasium_wrapper  # To register envs.
 
 
 def collect_observations_only(env, num_episodes, save_path, skip_frames):
@@ -42,7 +43,6 @@ def collect_observations_only(env, num_episodes, save_path, skip_frames):
         # Save episode data to disk
         episode_file = os.path.join(save_path, f"episode_{episode}.pt")
         torch.save(all_observations, episode_file)
-        # imageio.mimsave(f'output{episode}.gif', all_observations.numpy(), fps=30)
         print('frames', all_observations.shape[0])
         print(f"Episode {episode} saved to {episode_file}")
 
@@ -128,7 +128,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/train",
+        required=True,
         help="Path to save the collected data",
     )
     parser.add_argument(

@@ -4,9 +4,9 @@ defaults:
   - diffusion_model: DiT_B_4_cross_attn
 
 wandb:
-  mode: online # Logs to wandb. To disable, set to "disabled"
-  project: diffusion-for-simulation-doom
-  entity: diffusion-for-simulation
+  mode: disabled # Logs to wandb. To disable, set to "disabled"
+  project: 
+  entity: 
   name: ${common.run_name}
   group: null
   tags: null
@@ -24,13 +24,13 @@ initialization:
 experiment_name: "" # Should be set through CLI
 common:
   seed: null
-  project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation
+  project_storage_base_path: "" # Set this.
   run_name: ${now:%Y.%m.%d}T${now:%H-%M}_${experiment_name}
   run_dir: ${common.project_storage_base_path}/runs/${common.run_name}
 
 checkpointing:
   save_diffusion_model_every: 5
-  num_to_keep: 11  # number of checkpoints to keep, use null to disable
+  num_to_keep: 11  # Number of checkpoints to keep, use null to disable.
 
 
 static_dataset:
@@ -54,7 +54,7 @@ inference:
   episode_path: ${env.data_path_original}/test/episode_0.pt
   take_n_first_frames: 100
   sampling_algorithm: DDIM
-  vae_path: ${common.project_storage_base_path}/vae/trained_vae_decoder.pth
+  vae_path: "" # Set this.
   vae_batch_size: 256
   generation_mode: ["teacher_forcing", "auto_regressive"]
   

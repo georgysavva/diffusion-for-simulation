@@ -12,9 +12,6 @@ import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
 import transformers
-
-# wandb
-import wandb
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
@@ -24,9 +21,9 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import transforms
 from tqdm import tqdm
 
+# wandb
+import wandb
 from src.utils import normalize_img, prepare_image_obs
-
-wandb.login(key='faf21d9ff65ee150697c7e96f070616f6b662134', relogin=True)
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 logger = get_logger(__name__, log_level="INFO")

@@ -11,7 +11,6 @@ from src.data.episode import Episode
 from src.utils import normalize_img, prepare_image_obs
 
 
-# Main function
 def preprocess_data_with_vae(load_path, save_path, vae, resolution, batch_size):
     os.makedirs(save_path, exist_ok=True)
 
@@ -38,19 +37,20 @@ def preprocess_data_with_vae(load_path, save_path, vae, resolution, batch_size):
 
 if __name__ == "__main__":
 
-    # Configuration
     parser = argparse.ArgumentParser(description="Preprocess episodes with VAE")
     parser.add_argument(
         "--data_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original",
+        required=True,
     )
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent",
+        required=True,
     )
-    parser.add_argument("--resolution", type=int, default=256)
+    parser.add_argument(
+        "--resolution", type=int, default=256, help="Resolution of the images"
+    )
     parser.add_argument("--device", type=str, help="Device to use for computation")
     parser.add_argument(
         "--batch_size", type=int, default=256, help="Batch size for inference"

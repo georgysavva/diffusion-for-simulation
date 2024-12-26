@@ -1,13 +1,12 @@
 # python src/vae/test_vae.py
 
-from diffusers import AutoencoderKL
 import torch
+from diffusers import AutoencoderKL
 from PIL import Image
 from torchvision import transforms
 
 # Load the VAE model
-vae = AutoencoderKL.from_pretrained('stabilityai/sd-vae-ft-ema').cuda()
-# vae = AutoencoderKL.from_pretrained('pt-sk/stable-diffusion-1.5', subfolder='vae').cuda()
+vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").cuda()
 
 # Preprocess the input image
 image_path = 'image.png'
