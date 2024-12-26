@@ -128,7 +128,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original_act_repeat/train",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/train",
         help="Path to save the collected data",
     )
     parser.add_argument(

@@ -43,19 +43,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original_act_repeat",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original",
     )
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent_act_repeat",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent",
     )
     parser.add_argument("--resolution", type=int, default=256)
     parser.add_argument("--device", type=str, help="Device to use for computation")
     parser.add_argument(
         "--batch_size", type=int, default=256, help="Batch size for inference"
     )
-    
+
     args = parser.parse_args()
     if args.device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -67,7 +67,6 @@ if __name__ == "__main__":
     for dataset_type in ["test", "train"]:
         print(f"Preprocessing {dataset_type} data...")
         data_path, save_path = Path(args.data_path), Path(args.save_path)
-
 
         with torch.no_grad():
             preprocess_data_with_vae(
