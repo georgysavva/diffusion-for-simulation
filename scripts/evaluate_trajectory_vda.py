@@ -14,14 +14,12 @@ import torchvision.transforms as T
 from diffusers import AutoencoderKL
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
+from PIL import Image, ImageDraw, ImageFont
 
 from src.data.episode import Episode
 from src.diffusion import create_diffusion
 from src.traj_eval import TrajectoryEvaluator
 from src.utils import prepare_image_obs, save_np_video, to_numpy_video
-
-from PIL import Image, ImageDraw, ImageFont
-
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -94,16 +92,21 @@ def main(args):
     print('loaded vae decoder')
 
     # data
-    episode_paths = [l.strip() for l in open(args.episodes_path, 'r').readlines() if l.strip()]
-    episode_starts = [int(l.strip()) for l in open(args.episode_starts_path, 'r').readlines() if l.strip()]
+    episode_paths = [
+        l.strip() for l in open(args.episodes_path, "r").readlines() if l.strip()
+    ]
     episodes = [Episode.load(p) for p in episode_paths]
-    assert len(episodes) == len(episode_starts)
-    for start, episode in zip(episode_starts, episodes):
-        start = min(start, len(episode) - cfg.diffusion_model.model.num_conditioning_steps - args.num_gen)
+    for episode in episodes:
         # assert start + cfg.diffusion_model.model.num_conditioning_steps + args.num_gen <= len(episode)
-        episode.obs = episode.obs[start: start + cfg.diffusion_model.model.num_conditioning_steps + args.num_gen]
-        episode.act = episode.act[start: start + cfg.diffusion_model.model.num_conditioning_steps + args.num_gen]
-        episode.rew = episode.rew[start: start + cfg.diffusion_model.model.num_conditioning_steps + args.num_gen]
+        episode.obs = episode.obs[
+            : cfg.diffusion_model.model.num_conditioning_steps + args.num_gen
+        ]
+        episode.act = episode.act[
+            : cfg.diffusion_model.model.num_conditioning_steps + args.num_gen
+        ]
+        episode.rew = episode.rew[
+            : cfg.diffusion_model.model.num_conditioning_steps + args.num_gen
+        ]
         episode.obs = prepare_image_obs(episode.obs, args.img_resolution)
 
     evaluator = TrajectoryEvaluator(
@@ -133,8 +136,8 @@ def main(args):
         save_concatenated_images_with_text(gen, act_names[:-1]).save(pred_img_path)
         gt_vid_path = output_dir / 'groundtruth.mp4'
         pred_vid_path = output_dir / f'{tag}.mp4'
-        save_np_video(to_numpy_video(episode.obs), gt_vid_path, fps=15)
-        save_np_video(to_numpy_video(gen), pred_vid_path, fps=15)
+        save_np_video(to_numpy_video(episode.obs), gt_vid_path, fps=args.fps)
+        save_np_video(to_numpy_video(gen), pred_vid_path, fps=args.fps)
 
         print("saved groundtruth img to", gt_img_path)
         print("saved groundtruth vid to", gt_vid_path)
@@ -145,19 +148,33 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate trajectory quality.")
-    parser.add_argument("--run_dir", type=str, help="Path to the directory of the run.")
+    parser.add_argument(
+        "--run_dir", type=str, required=True, help="Path to the directory of the run."
+    )
     parser.add_argument("--model_version", type=str, required=True, help="Name of the checkpoint file.")
-    parser.add_argument("--fps", type=int, help="Trajectory frames per second.", default=2)
+    parser.add_argument(
+        "--fps", type=int, help="Trajectory frames per second.", default=15
+    )
     parser.add_argument("--img_resolution", type=int, help="Resolution of the images.", default=256)
     parser.add_argument("--vae_batch_size", type=int, default=32, help="Batch size for VAE encode and decode",)
     parser.add_argument("--sampling_algorithm", type=str, choices=["DDIM", "DDPM"], default="DDIM", help="Sampling algorithm to use for diffusion.")
     parser.add_argument("--teacherforcing", action='store_true')
     parser.add_argument("--clip_denoised", action='store_true')
-    parser.add_argument("--num_sampling_steps", type=int, help="Number of diffusion sampling steps.", default=25)
+    parser.add_argument(
+        "--num_sampling_steps",
+        type=int,
+        help="Number of diffusion sampling steps.",
+        default=8,
+    )
     # data
-    parser.add_argument("--episodes_path", type=str, default="trajectory_test_bed/episode_paths.txt")
-    parser.add_argument("--episode_starts_path", type=str, default="trajectory_test_bed/episode_starts.txt")
-    parser.add_argument("--episode_start", type=int, default=0)
-    parser.add_argument("--num_gen", type=int, default=10)
+    parser.add_argument(
+        "--episodes_path",
+        type=str,
+        required=True,
+        help="Path to the file containing the episode paths.",
+    )
+    parser.add_argument(
+        "--num_gen", type=int, default=93, help="Number of frames to generate."
+    )
     args = parser.parse_args()
     main(args)
