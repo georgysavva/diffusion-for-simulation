@@ -1,8 +1,8 @@
 # Transformer-Based Diffusion for Game Generation
 
-This project applies Transformer based Diffusion models to simulate Doom (the find my way home scenario).
+This project applies transformer-based Diffusion models to simulate Doom (the find my way home scenario). 
 
-This repository is based on the [diamond](https://github.com/eloialonso/diamond/tree/csgo) repo. The DiT model code is based on the official DiT [repo](https://github.com/facebookresearch/DiT/blob/main/models.py). We use [hydra](https://hydra.cc/docs/intro/) for configuration.
+See the final report [here](https://georgysavva.github.io/assets/pdf/Diffusion_for_Simulation.pdf).
 
 ## Local Setup
 
