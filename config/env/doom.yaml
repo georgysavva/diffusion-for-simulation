@@ -1,5 +1,6 @@
 id: doom
 num_actions: 6 # 5 buttons + 1 no-op
 data_path: "" # Set this.
+data_path_latent: ${env.data_path}/latent/
 image_resolution: 256
 fps: 35

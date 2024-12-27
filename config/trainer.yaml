@@ -31,7 +31,7 @@ checkpointing:
   num_to_keep: null  # Number of checkpoints to keep, use null to disable.
 
 static_dataset:
-  path: ${env.data_path}
+  path: ${env.data_path_latent}
   ignore_sample_weights: True
   guarantee_full_seqs: True
 
