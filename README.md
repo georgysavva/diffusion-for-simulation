@@ -1,4 +1,4 @@
-# Diffusion for Game Simulation with Transformers
+# Transformer-Based Diffusion for Game Generation
 
 This project applies Transformer based Diffusion models to simulate Doom (the find my way home scenario).
 
