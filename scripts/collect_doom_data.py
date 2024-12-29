@@ -134,7 +134,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_episodes", type=int, default=2000, help="Number of episodes to sample"
     )
-    # for jack to train vae:
+
     parser.add_argument("--observations_only", action='store_true', help='whether to only save observations')
     parser.add_argument("--skip_frames", type=int, default=1, help='number of frames between each saved one (only for observations_only)')
     parser.add_argument("--repeat_action", type=int, default=10, help='number of frames between each repeat the same actions (only for full episodes)')
