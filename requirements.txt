@@ -5,12 +5,12 @@ torch
 torcheval
 torchvision
 tqdm
-# wandb # jack: for some reason newest version doesnt work for me on greene
+
 wandb==0.17.9
 vizdoom
 gymnasium
-# opencv-python
-opencv-python-headless # jack: opencv-python doesnt work on greene a100
+
+opencv-python-headless 
 timm
 diffusers
 transformers
