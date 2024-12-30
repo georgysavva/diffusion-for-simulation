@@ -54,13 +54,14 @@ inference:
   should: True
   every: 5
   episode_path: ${env.data_path_original}/test/episode_0.pt
-  num_generated_frame: 200
+  num_generated_frames: 200
   sampling_algorithm: DDIM
   vae_path: ${common.project_storage_base_path}/vae/trained_vae_decoder.pth
   vae_batch_size: 256
   generation_mode: ["teacher_forcing", "auto_regressive"]
   video_fps: 15
-  
+
+debug: False 
 
 hydra:
   run:

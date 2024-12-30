@@ -38,6 +38,13 @@ from src.utils import (
 class Trainer:
     def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
+        if cfg.debug:
+            cfg.experiment_name = "test"
+            cfg.wandb.mode = "disabled"
+            cfg.diffusion_model.training.train_batch_size = 1
+            cfg.training.steps_per_epoch = 2
+            cfg.diffusion_model.training.eval_batch_size = 2
+            cfg.evaluation.num_sample_batches = 10
         OmegaConf.resolve(cfg)
         self._cfg = cfg
         self._rank = dist.get_rank() if dist.is_initialized() else 0
