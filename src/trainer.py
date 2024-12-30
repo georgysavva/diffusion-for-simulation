@@ -39,7 +39,6 @@ class Trainer:
     def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         if cfg.debug:
-            cfg.experiment_name = "test"
             cfg.wandb.mode = "disabled"
             cfg.diffusion_model.training.train_batch_size = 1
             cfg.training.steps_per_epoch = 2
