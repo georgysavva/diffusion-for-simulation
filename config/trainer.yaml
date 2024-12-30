@@ -54,7 +54,7 @@ inference:
   should: True
   every: 5
   episode_path: ${env.data_path_original}/test/episode_0.pt
-  take_n_first_frames: 100
+  num_generated_frame: 200
   sampling_algorithm: DDIM
   vae_path: ${common.project_storage_base_path}/vae/trained_vae_decoder.pth
   vae_batch_size: 256

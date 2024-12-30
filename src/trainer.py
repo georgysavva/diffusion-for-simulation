@@ -195,8 +195,11 @@ class Trainer:
         episode.obs = prepare_image_obs(
             episode.obs, cfg.static_dataset.image_resolution
         )
-        if "take_n_first_frames" in cfg.inference:
-            episode = episode.slice(0, cfg.inference.take_n_first_frames)
+        episode = episode.slice(
+            0,
+            cfg.diffusion_model.model.num_conditioning_steps
+            + cfg.inference.num_generated_frames,
+        )
 
         self.inference_episode = episode
         self.inference_episode_name = os.path.splitext(episode_path.name)[0]

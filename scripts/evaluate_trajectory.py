@@ -55,8 +55,11 @@ def main(args):
     episode.obs = prepare_image_obs(
         episode.obs, run_config.static_dataset.image_resolution
     )
-    if args.take_first_n_steps is not None:
-        episode = episode.slice(0, args.take_first_n_steps)
+    episode = episode.slice(
+        0,
+        run_config.diffusion_model.model.num_conditioning_steps
+        + args.num_generated_frames,
+    )
     num_seed_steps = (
         run_config.diffusion_model.model.num_conditioning_steps
         if run_config.static_dataset.guarantee_full_seqs
@@ -149,10 +152,10 @@ if __name__ == "__main__":
         default=8,
     )
     parser.add_argument(
-        "--take_first_n_steps",
+        "--num_generated_frames",
         type=int,
-        help="Number of first frames in the episode to generate the trajectory for.",
-        default=100,
+        help="Number of frames to generate.",
+        default=200,
     )
     parser.add_argument("--device", type=str, help="Device to run the evaluation on.")
     parser.add_argument(
