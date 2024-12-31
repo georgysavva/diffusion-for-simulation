@@ -13,13 +13,9 @@ model:
   learn_sigma: ${diffusion.learn_sigma}
   share_patch_embed: True
 
-
-
-
-
 training:
   train_batch_size: 32
-  eval_batch_size: 128
+  eval_batch_size: 32
   lr_warmup_steps: 100
 
 
