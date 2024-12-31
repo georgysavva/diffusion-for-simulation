@@ -1,3 +1,4 @@
+import math
 import os
 import time
 from functools import partial
@@ -135,7 +136,8 @@ class Trainer:
         self.opt = torch.optim.AdamW(
             self.diffusion_model.parameters(),
             lr=(
-                optim_cfg.base_lr * cfg.diffusion_model.training.train_batch_size
+                optim_cfg.base_lr
+                * math.sqrt(cfg.diffusion_model.training.train_batch_size)
                 if optim_cfg.scale_lr
                 else optim_cfg.base_lr
             ),
