@@ -16,7 +16,7 @@ model:
 
 training:
   train_batch_size: 256
-  eval_batch_size: 256
+  eval_batch_size: 512
   lr_warmup_steps: 100
 
   optimizer:
