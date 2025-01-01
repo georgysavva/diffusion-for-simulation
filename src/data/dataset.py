@@ -102,16 +102,12 @@ class TestDatasetTraverser:
         dataset: Dataset,
         batch_size: int,
         seq_length: int,
-        num_batches: int,
+        subsample_rate: int,
     ) -> None:
         self.dataset = dataset
         self.batch_size = batch_size
         self.seq_length = seq_length
-        self.num_batches = num_batches
-        num_total_samples = (self.dataset.lengths - seq_length + 1).sum()
-        self.subsample_rate = math.ceil(
-            num_total_samples / (self.num_batches * self.batch_size)
-        )
+        self.subsample_rate = subsample_rate
 
     def __len__(self):
         return math.ceil(

@@ -44,7 +44,7 @@ class Trainer:
             cfg.diffusion_model.training.train_batch_size = 1
             cfg.training.steps_per_epoch = 2
             cfg.diffusion_model.training.eval_batch_size = 2
-            cfg.evaluation.num_sample_batches = 10
+            cfg.evaluation.sub_sample_rate = 200
         OmegaConf.resolve(cfg)
         self._cfg = cfg
         self._rank = dist.get_rank() if dist.is_initialized() else 0
@@ -175,7 +175,7 @@ class Trainer:
             self.test_dataset,
             c.eval_batch_size,
             seq_length,
-            cfg.evaluation.num_sample_batches,
+            cfg.evaluation.sub_sample_rate,
         )
 
         # Training state (things to be saved/restored)
@@ -281,7 +281,14 @@ class Trainer:
     def train_diffusion_model(self):
         self.diffusion_model.train()
         self.diffusion_model.zero_grad()
-        num_steps = self._cfg.training.steps_per_epoch
+        assert (
+            self._cfg.training.epoch_size
+            % self._cfg.diffusion_model.training.train_batch_size
+        ), "epoch_size should be divisible by train_batch_size"
+        num_steps = (
+            self._cfg.training.epoch_size
+            // self._cfg.diffusion_model.training.train_batch_size
+        )
         model = self._diffusion_model
         opt = self.opt
         lr_sched = self.lr_sched
