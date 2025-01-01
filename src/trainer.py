@@ -265,8 +265,8 @@ class Trainer:
                 wandb_log(
                     {"duration": (time.time() - start_time) / 3600},
                     self.epoch,
-                    self.global_step,
                 )
+                wandb_log({"step": self.global_step}, self.epoch)
 
             # Checkpointing
             self.save_checkpoint()
@@ -296,23 +296,21 @@ class Trainer:
 
         opt.zero_grad()
         data_iterator = iter(data_loader)
-
+        train_loss = 0.0
         for _ in trange(num_steps, desc=f"Training", disable=self._rank > 0):
             self.global_step = self.global_step + 1
             batch = next(data_iterator).to(self._device)
             loss = self.call_model(model, batch)
             loss.backward()
-            to_log = {"loss": loss.item()}
+            train_loss += loss.item()
 
             opt.step()
             opt.zero_grad()
-
-            if lr_sched is not None:
-                to_log["lr"] = lr_sched.get_last_lr()[0]
-                lr_sched.step()
-
-            to_log = {f"train/{k}": v for k, v in to_log.items()}
-            wandb_log(to_log, self.epoch, self.global_step)
+            lr_sched.step()
+        train_loss = train_loss / num_steps
+        to_log = {"loss": train_loss, "lr": lr_sched.get_last_lr()[0]}
+        to_log = {f"train/{k}": v for k, v in to_log.items()}
+        wandb_log(to_log, self.epoch)
 
     @torch.no_grad()
     def test_diffusion_model(self):
@@ -329,7 +327,7 @@ class Trainer:
         to_log = {"loss": eval_loss}
 
         to_log = {f"test/{k}": v for k, v in to_log.items()}
-        wandb_log(to_log, self.epoch, self.global_step)
+        wandb_log(to_log, self.epoch)
 
     @torch.no_grad()
     def inference_diffusion_model(self):
@@ -345,7 +343,7 @@ class Trainer:
             generated_trajectory,psnr = self.trajectory_evaluator.evaluate_episode(
                 self.diffusion_model, self.inference_episode, generation_mode
             )
-            wandb_log({f"inference/PSNR_{generation_mode}": psnr}, self.epoch, self.global_step)
+            wandb_log({f"inference/PSNR_{generation_mode}": psnr}, self.epoch)
             save_np_video(
                 generated_trajectory,
                 output_dir

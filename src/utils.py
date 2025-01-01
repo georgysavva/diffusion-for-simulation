@@ -119,8 +119,8 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
 
 
-def wandb_log(log: dict[str, float], epoch: int, global_step: int) -> None:
-    wandb.log({"epoch": epoch, **log}, step=global_step)
+def wandb_log(log: dict[str, float], epoch: int) -> None:
+    wandb.log(log, step=epoch)
 
 
 def download_model_weights(url: str, save_path: str, device: torch.device):
