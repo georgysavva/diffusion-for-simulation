@@ -47,7 +47,7 @@ training:
 
 evaluation:
   should: True
-  sub_sample_rate: 10
+  sub_sample_rate: 5
   every: 1
 
 inference:
