@@ -2,8 +2,6 @@
 
 This project applies transformer-based Diffusion models to simulate Doom (the find my way home scenario). 
 
-See the final report [here](https://georgysavva.github.io/assets/pdf/Diffusion_for_Simulation.pdf).
-
 ## Local Setup
 
 1. Create the conda environment
