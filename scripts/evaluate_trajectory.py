@@ -65,12 +65,13 @@ def main(args):
         if run_config.static_dataset.guarantee_full_seqs
         else args.num_seed_steps
     )
+    sampling_algorithm = run_config.diffusion.sampling_algorithm
     evaluator = TrajectoryEvaluator(
         diffusion=diffusion,
         vae=vae,
         num_seed_steps=num_seed_steps,
         num_conditioning_steps=run_config.diffusion_model.model.num_conditioning_steps,
-        sampling_algorithm=args.sampling_algorithm,
+        sampling_algorithm=sampling_algorithm,
         vae_batch_size=args.vae_batch_size,
         device=device,
     )
@@ -82,10 +83,10 @@ def main(args):
         generated_trajectory, psnr = evaluator.evaluate_episode(
             diffusion_model, episode, generation_mode
         )
-        print(f"generated_{generation_mode}_{args.sampling_algorithm} PSNR: {psnr:.2f}")
+        print(f"generated_{generation_mode}_{sampling_algorithm} PSNR: {psnr:.2f}")
         save_np_video(
             generated_trajectory,
-            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
+            output_dir / f"generated_{generation_mode}_{sampling_algorithm}.mp4",
             args.video_fps,
         )
         images_strip = to_strip_of_images(
@@ -95,7 +96,7 @@ def main(args):
             args.image_strip_stride,
         )
         Image.fromarray(images_strip).save(
-            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.png"
+            output_dir / f"generated_{generation_mode}_{sampling_algorithm}.png"
         )
 
     ground_truth_trajectory = to_numpy_video(episode.obs)
@@ -178,13 +179,6 @@ if __name__ == "__main__":
         "--video_fps",
         type=int,
         default=15,
-    )
-    parser.add_argument(
-        "--sampling_algorithm",
-        type=str,
-        choices=["DDIM", "DDPM"],
-        default="DDIM",
-        help="Sampling algorithm to use for diffusion.",
     )
     args = parser.parse_args()
     main(args)

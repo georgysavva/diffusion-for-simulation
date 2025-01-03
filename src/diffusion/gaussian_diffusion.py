@@ -4,11 +4,11 @@
 #     IDDPM: https://github.com/openai/improved-diffusion/blob/main/improved_diffusion/gaussian_diffusion.py
 
 
+import enum
 import math
 
 import numpy as np
 import torch as th
-import enum
 
 from .diffusion_utils import discretized_gaussian_log_likelihood, normal_kl
 
@@ -712,7 +712,9 @@ class GaussianDiffusion:
         output = th.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
-    def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
+    def training_losses(
+        self, model, x_start, t, model_kwargs=None, noise=None, sample_fn=None
+    ):
         """
         Compute training losses for a single timestep.
         :param model: the model to evaluate loss on.
@@ -732,9 +734,10 @@ class GaussianDiffusion:
 
         terms = {}
 
+        model_output = model(x_t, t, **model_kwargs)
         if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
             terms["loss"] = self._vb_terms_bpd(
-                model=model,
+                model=lambda *args, r=model_output: r,
                 x_start=x_start,
                 x_t=x_t,
                 t=t,
@@ -744,7 +747,6 @@ class GaussianDiffusion:
             if self.loss_type == LossType.RESCALED_KL:
                 terms["loss"] *= self.num_timesteps
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
-            model_output = model(x_t, t, **model_kwargs)
 
             if self.model_var_type in [
                 ModelVarType.LEARNED,
@@ -783,7 +785,13 @@ class GaussianDiffusion:
                 terms["loss"] = terms["mse"]
         else:
             raise NotImplementedError(self.loss_type)
-
+        if sample_fn is not None:
+            terms["sample"] = sample_fn(
+                model=lambda *args, r=model_output: r,
+                x=x_t,
+                t=t,
+                model_kwargs=model_kwargs,
+            )["sample"]
         return terms
 
     def _prior_bpd(self, x_start):
