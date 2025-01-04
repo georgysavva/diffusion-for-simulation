@@ -168,7 +168,6 @@ class DiT(nn.Module):
         num_heads,
         mlp_ratio,
         time_frequency_embedding_size,
-        learn_temporal_embedding,
         learn_sigma,
     ):
         super().__init__()
@@ -189,17 +188,13 @@ class DiT(nn.Module):
         self.pos_embed = nn.Parameter(
             torch.zeros(1, num_patches, hidden_size), requires_grad=False
         )
-        if learn_temporal_embedding:
-            self.temporal_embed = FrameEmbedder(num_conditioning_steps + 1, hidden_size)
-        else:
-            temporal_embed = get_1d_sincos_pos_embed_from_grid(
-                hidden_size, np.arange(num_conditioning_steps + 1, dtype=np.float32)
-            )
-            self.temporal_embed = nn.Parameter(
-                torch.from_numpy(temporal_embed).float().unsqueeze(0),
-                requires_grad=False,
-            )
-        self.learn_temporal_embedding = learn_temporal_embedding
+        temporal_embed = get_1d_sincos_pos_embed_from_grid(
+            hidden_size, np.arange(num_conditioning_steps + 1, dtype=np.float32)
+        )
+        self.temporal_embed = nn.Parameter(
+            torch.from_numpy(temporal_embed).float().unsqueeze(0),
+            requires_grad=False,
+        )
         self.blocks = nn.ModuleList(
             [
                 DiTBlock(
@@ -249,8 +244,6 @@ class DiT(nn.Module):
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
         nn.init.constant_(self.obs_embedder.proj.bias, 0)
         nn.init.normal_(self.act_embedder.embedding_table.weight, std=0.02)
-        if self.learn_temporal_embedding:
-            nn.init.normal_(self.temporal_embed.embedding_table.weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
@@ -307,11 +300,7 @@ class DiT(nn.Module):
         x[:, : self.num_conditioning_steps] = (
             x[:, : self.num_conditioning_steps] + prev_act
         )
-        if self.learn_temporal_embedding:
-            temporal = torch.arange(self.num_conditioning_steps + 1, device=self.device)
-            temporal = self.temporal_embed(temporal)
-        else:
-            temporal = self.temporal_embed
+        temporal = self.temporal_embed
         x = einops.rearrange(x, "n steps t m -> (n t) steps m")
         x += temporal
         x = einops.rearrange(
