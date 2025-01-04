@@ -9,6 +9,9 @@ import math
 
 import numpy as np
 import torch as th
+from diffusers import AutoencoderKL
+
+from src.utils import denormalize_img
 
 from .diffusion_utils import discretized_gaussian_log_likelihood, normal_kl
 
@@ -199,6 +202,21 @@ class GaussianDiffusion:
         self.posterior_mean_coef2 = (
             (1.0 - self.alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - self.alphas_cumprod)
         )
+        if th.cuda.is_available():
+            self._device = th.device("cuda", 0)
+        else:
+            self._device = th.device("cpu")
+        self.vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(
+            self._device
+        )
+        self.vae.decoder.load_state_dict(
+            th.load(
+                "/scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth",
+                weights_only=True,
+                map_location=self._device,
+            )
+        )
+        self.vae.eval()
 
     def q_mean_variance(self, x_start, t):
         """
@@ -730,14 +748,15 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
+        self._show_image(x_start[0], "original")
         x_t = self.q_sample(x_start, t, noise=noise)
-
+        self._show_image(x_t[0], f"x_t_{t[0]}")
         terms = {}
 
         model_output = model(x_t, t, **model_kwargs)
         if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
             terms["loss"] = self._vb_terms_bpd(
-                model=lambda *args, r=model_output: r,
+                model=lambda *args, r=model_output, **kwargs: r,
                 x_start=x_start,
                 x_t=x_t,
                 t=t,
@@ -759,11 +778,12 @@ class GaussianDiffusion:
                 # it affect our mean prediction.
                 frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
                 terms["vb"] = self._vb_terms_bpd(
-                    model=lambda *args, r=frozen_out: r,
+                    model=lambda *args, r=frozen_out, **kwargs: r,
                     x_start=x_start,
                     x_t=x_t,
                     t=t,
                     clip_denoised=False,
+                    model_kwargs=model_kwargs,
                 )["output"]
                 if self.loss_type == LossType.RESCALED_MSE:
                     # Divide by 1000 for equivalence with initial implementation.
@@ -787,11 +807,12 @@ class GaussianDiffusion:
             raise NotImplementedError(self.loss_type)
         if sample_fn is not None:
             terms["sample"] = sample_fn(
-                model=lambda *args, r=model_output: r,
+                model=lambda *args, r=model_output, **kwargs: r,
                 x=x_t,
                 t=t,
                 model_kwargs=model_kwargs,
             )["sample"]
+            self._show_image(terms["sample"][0], "sample")
         return terms
 
     def _prior_bpd(self, x_start):
@@ -864,6 +885,21 @@ class GaussianDiffusion:
             "xstart_mse": xstart_mse,
             "mse": mse,
         }
+
+    def _show_image(self, img, title):
+        """
+        Show an image using matplotlib.
+        """
+        img = img.unsqueeze(0)
+        img = self.vae.decode(img / 0.18215).sample.clamp(-1, 1)
+        img = denormalize_img(img)
+        import torchvision.transforms as transforms
+
+        img = transforms.ToPILImage()(img.squeeze(0).cpu())
+        import os
+
+        os.makedirs("debug_img", exist_ok=True)
+        img.save(f"debug_img/{title}.png")
 
 
 def _extract_into_tensor(arr, timesteps, broadcast_shape):

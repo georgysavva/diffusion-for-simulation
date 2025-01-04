@@ -28,7 +28,8 @@ def main(args):
     run_config_path = run_dir / ".hydra" / "config.yaml"
     run_config = OmegaConf.load(run_config_path)
     diffusion = create_diffusion(
-        str(args.num_sampling_steps), learn_sigma=run_config.diffusion.learn_sigma
+        str(run_config.diffusion.num_sampling_steps),
+        learn_sigma=run_config.diffusion.learn_sigma,
     )
     diffusion_model = instantiate(run_config.diffusion_model.model).to(device)
     if args.model_version == "latest":
@@ -145,12 +146,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num_seed_steps", type=int, help="Number of seed steps.", default=8
-    )
-    parser.add_argument(
-        "--num_sampling_steps",
-        type=int,
-        help="Number of diffusion sampling steps.",
-        default=8,
     )
     parser.add_argument(
         "--num_generated_frames",
