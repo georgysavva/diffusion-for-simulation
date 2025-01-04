@@ -1,5 +1,5 @@
 model:
-  _target_: src.models.DiT_with_encoder.DiT
+  _target_: src.models.DiT_concat.DiT
   time_frequency_embedding_size: 256
   num_actions: ${env.num_actions}
   input_size: 32
@@ -11,8 +11,6 @@ model:
   num_heads: 6
   num_conditioning_steps: 64
   learn_sigma: ${diffusion.learn_sigma}
-  separate_cross_attn: True
-  share_patch_embed: True
 
 training:
   train_batch_size: 32
@@ -23,3 +21,5 @@ training:
     base_lr: 8.8388e-6
     
     scale_lr: True
+  
+
