@@ -16,7 +16,7 @@ class BatchSampler(torch.utils.data.Sampler):
         world_size: int,
         batch_size: int,
         seq_length: int,
-        guarantee_full_seqs: bool,
+        seed_seq_length: int,
     ) -> None:
         super().__init__(dataset)
         self.dataset = dataset
@@ -24,7 +24,7 @@ class BatchSampler(torch.utils.data.Sampler):
         self.world_size = world_size
         self.batch_size = batch_size
         self.seq_length = seq_length
-        self.guarantee_full_seqs = guarantee_full_seqs
+        self.seed_seq_length = seed_seq_length
 
     def __len__(self):
         raise NotImplementedError
@@ -37,14 +37,21 @@ class BatchSampler(torch.utils.data.Sampler):
         num_episodes = self.dataset.num_episodes
 
         episodes_partition = np.arange(self.rank, num_episodes, self.world_size)
+        short_episode_ids = np.where(self.dataset.lengths < self.seed_seq_length + 1)[0]
+        episodes_partition = episodes_partition[
+            ~np.isin(episodes_partition, short_episode_ids)
+        ]
         episode_ids = np.random.choice(
             episodes_partition, size=self.batch_size, replace=True
         )
-        if self.guarantee_full_seqs:
-            starts = np.random.randint(
-                low=0, high=self.dataset.lengths[episode_ids] - self.seq_length
-            )
-            stops = starts + self.seq_length
+        stops = np.random.randint(
+            low=self.seed_seq_length, high=self.dataset.lengths[episode_ids] - (self. seed_seq_length + 1)
+        )
+
+        starts = np.random.randint(
+            low=0, high=self.dataset.lengths[episode_ids] - (self. seed_seq_length + 1)
+        )
+        stops = starts + self.seq_length
         else:
             timesteps = np.random.randint(low=0, high=self.dataset.lengths[episode_ids])
             stops = np.minimum(

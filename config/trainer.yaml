@@ -36,7 +36,7 @@ checkpointing:
 static_dataset:
   path: ${env.data_path_latent}
   ignore_sample_weights: True
-  guarantee_full_seqs: True
+  seed_seq_len: 64
   image_resolution: 256
 
 training:
