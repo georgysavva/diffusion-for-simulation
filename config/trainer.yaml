@@ -15,6 +15,7 @@ wandb:
 diffusion:
   learn_sigma: False
   num_sampling_steps: 8
+  sampling_algorithm: DDIM
 
 pretrained_weights_url: null
 
@@ -44,18 +45,19 @@ training:
   epoch_size: 256000
   num_epochs: 1000000
   num_workers_data_loaders: 8
+  num_autoregressive_steps: ${diffusion_model.model.num_conditioning_steps}
 
 evaluation:
   should: True
   sub_sample_rate: 5
   every: 1
+  num_autoregressive_steps: ${diffusion_model.model.num_conditioning_steps}
 
 inference:
   should: True
   every: 5
   episode_path: ${env.data_path_original}/test/episode_0.pt
   num_generated_frames: 200
-  sampling_algorithm: DDIM
   vae_path: ${common.project_storage_base_path}/vae/trained_vae_decoder.pth
   vae_batch_size: 256
   generation_mode: ["teacher_forcing", "auto_regressive"]

@@ -28,7 +28,8 @@ def main(args):
     run_config_path = run_dir / ".hydra" / "config.yaml"
     run_config = OmegaConf.load(run_config_path)
     diffusion = create_diffusion(
-        str(args.num_sampling_steps), learn_sigma=run_config.diffusion.learn_sigma
+        str(run_config.diffusion.num_sampling_steps),
+        learn_sigma=run_config.diffusion.learn_sigma,
     )
     diffusion_model = instantiate(run_config.diffusion_model.model).to(device)
     if args.model_version == "latest":
@@ -61,12 +62,13 @@ def main(args):
         + args.num_generated_frames,
     )
     num_seed_steps = run_config.static_dataset.seed_seq_length
+    sampling_algorithm = run_config.diffusion.sampling_algorithm
     evaluator = TrajectoryEvaluator(
         diffusion=diffusion,
         vae=vae,
         num_seed_steps=num_seed_steps,
         num_conditioning_steps=run_config.diffusion_model.model.num_conditioning_steps,
-        sampling_algorithm=args.sampling_algorithm,
+        sampling_algorithm=sampling_algorithm,
         vae_batch_size=args.vae_batch_size,
         device=device,
     )
@@ -78,10 +80,10 @@ def main(args):
         generated_trajectory, psnr = evaluator.evaluate_episode(
             diffusion_model, episode, generation_mode
         )
-        print(f"generated_{generation_mode}_{args.sampling_algorithm} PSNR: {psnr:.2f}")
+        print(f"generated_{generation_mode}_{sampling_algorithm} PSNR: {psnr:.2f}")
         save_np_video(
             generated_trajectory,
-            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
+            output_dir / f"generated_{generation_mode}_{sampling_algorithm}.mp4",
             args.video_fps,
         )
         images_strip = to_strip_of_images(
@@ -91,7 +93,7 @@ def main(args):
             args.image_strip_stride,
         )
         Image.fromarray(images_strip).save(
-            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.png"
+            output_dir / f"generated_{generation_mode}_{sampling_algorithm}.png"
         )
 
     ground_truth_trajectory = to_numpy_video(episode.obs)
@@ -139,12 +141,6 @@ if __name__ == "__main__":
         default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_0.pt",
     )
     parser.add_argument(
-        "--num_sampling_steps",
-        type=int,
-        help="Number of diffusion sampling steps.",
-        default=8,
-    )
-    parser.add_argument(
         "--num_generated_frames",
         type=int,
         help="Number of frames to generate.",
@@ -171,13 +167,6 @@ if __name__ == "__main__":
         "--video_fps",
         type=int,
         default=15,
-    )
-    parser.add_argument(
-        "--sampling_algorithm",
-        type=str,
-        choices=["DDIM", "DDPM"],
-        default="DDIM",
-        help="Sampling algorithm to use for diffusion.",
     )
     args = parser.parse_args()
     main(args)

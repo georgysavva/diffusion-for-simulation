@@ -148,14 +148,15 @@ class Trainer:
         # Data loaders
 
         c = cfg.diffusion_model.training
-        seq_length = cfg.diffusion_model.model.num_conditioning_steps + 1
 
         batch_sampler = BatchSampler(
             self.train_dataset,
             self._rank,
             self._world_size,
             c.train_batch_size,
-            seq_length,
+            cfg.diffusion_model.model.num_conditioning_steps
+            + 1
+            + cfg.training.num_autoregressive_steps,
             seed_seq_length=cfg.static_dataset.seed_seq_length,
         )
 
@@ -172,7 +173,9 @@ class Trainer:
         self._data_loader_test = TestDatasetTraverser(
             self.test_dataset,
             c.eval_batch_size,
-            seq_length,
+            cfg.diffusion_model.model.num_conditioning_steps
+            + 1
+            + cfg.evaluation.num_autoregressive_steps,
             cfg.evaluation.sub_sample_rate,
         )
 
@@ -215,7 +218,7 @@ class Trainer:
             vae=vae,
             num_seed_steps=cfg.static_dataset.seed_seq_length,
             num_conditioning_steps=cfg.diffusion_model.model.num_conditioning_steps,
-            sampling_algorithm=cfg.inference.sampling_algorithm,
+            sampling_algorithm=cfg.diffusion.sampling_algorithm,
             vae_batch_size=cfg.inference.vae_batch_size,
             device=self._device,
         )
@@ -336,14 +339,14 @@ class Trainer:
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         for generation_mode in self._cfg.inference.generation_mode:
-            generated_trajectory,psnr = self.trajectory_evaluator.evaluate_episode(
+            generated_trajectory, psnr = self.trajectory_evaluator.evaluate_episode(
                 self.diffusion_model, self.inference_episode, generation_mode
             )
             wandb_log({f"inference/PSNR_{generation_mode}": psnr}, self.epoch)
             save_np_video(
                 generated_trajectory,
                 output_dir
-                / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.mp4",
+                / f"generated_{generation_mode}_{self._cfg.diffusion.sampling_algorithm}.mp4",
                 fps=self._cfg.inference.video_fps,
             )
         ground_truth_trajectory = to_numpy_video(self.inference_episode.obs)
@@ -359,12 +362,41 @@ class Trainer:
 
     def call_model(self, model, batch):
         obs, act = batch.obs, batch.act
-        n = obs.shape[0]
-        t = torch.randint(0, self.diffusion.num_timesteps, (n,), device=self._device)
-        prev_obs = obs[:, :-1]
-        prev_act = act[:, :-1]
-        model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
-        current_obs = obs[:, -1]
-        loss_dict = self.diffusion.training_losses(model, current_obs, t, model_kwargs)
-        loss = loss_dict["loss"].mean()
+        batch_size = obs.shape[0]
+        steps = obs.shape[1] - self._cfg.diffusion_model.model.num_conditioning_steps
+        loss = 0.0
+        for i in range(steps):
+            t = torch.randint(
+                0, self.diffusion.num_timesteps, (batch_size,), device=self._device
+            )
+            prev_obs = obs[
+                :, i : i + self._cfg.diffusion_model.model.num_conditioning_steps
+            ]
+            prev_act = act[
+                :, i : i + self._cfg.diffusion_model.model.num_conditioning_steps
+            ]
+            model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
+            current_obs = obs[
+                :, i + self._cfg.diffusion_model.model.num_conditioning_steps
+            ]
+            if self._cfg.diffusion.sampling_algorithm == "DDIM":
+                sample_fn = self.diffusion.ddim_sample
+            elif self._cfg.diffusion.sampling_algorithm == "DDPM":
+                sample_fn = self.diffusion.p_sample
+            sample_fn_wrapper = lambda model, x, t, model_kwargs: sample_fn(
+                model,
+                x,
+                t,
+                model_kwargs=model_kwargs,
+                clip_denoised=False,
+            )
+            result = self.diffusion.training_losses(
+                model, current_obs, t, model_kwargs, sample_fn=sample_fn_wrapper
+            )
+            loss += result["loss"].mean()
+            current_sample = result["sample"]
+            obs[:, i + self._cfg.diffusion_model.model.num_conditioning_steps] = (
+                current_sample
+            )
+        loss = loss / steps
         return loss
