@@ -18,7 +18,6 @@ class Dataset(TorchDataset):
     def __init__(
         self,
         directory: Path,
-        guarantee_full_seqs: bool,
     ) -> None:
         super().__init__()
 
@@ -29,7 +28,6 @@ class Dataset(TorchDataset):
         self._lengths = np.array(
             [ep["length"] for ep in self.episodes_info["episodes"]]
         )
-        self._guarantee_full_seqs = guarantee_full_seqs
 
     @property
     def num_episodes(self) -> int:
@@ -41,7 +39,7 @@ class Dataset(TorchDataset):
 
     def __getitem__(self, segment_id: SegmentId) -> Segment:
         episode = self.load_episode(segment_id.episode_id)
-        segment = make_segment(episode, segment_id, self._guarantee_full_seqs)
+        segment = make_segment(episode, segment_id)
         return segment
 
     def load_episode(self, episode_id: int) -> Episode:
@@ -61,9 +59,7 @@ def collate_segments_to_batch(segments: list[Segment]) -> Batch:
     return Batch(*stack)
 
 
-def make_segment(
-    episode: Episode, segment_id: SegmentId, guarantee_full_seqs
-) -> Segment:
+def make_segment(episode: Episode, segment_id: SegmentId) -> Segment:
     assert (
         segment_id.start < len(episode)
         and segment_id.stop > 0
@@ -71,10 +67,6 @@ def make_segment(
     )
     assert segment_id.stop <= len(episode)
     pad_len_left = max(0, -segment_id.start)
-    if guarantee_full_seqs:
-        assert pad_len_left == 0
-        assert segment_id.start >= 0
-        assert segment_id.stop <= len(episode)
 
     def pad(x):
         return (
@@ -137,7 +129,6 @@ class TestDatasetTraverser:
                 segment = make_segment(
                     episode,
                     SegmentId(episode_id, start, stop),
-                    guarantee_full_seqs=True,
                 )
                 chunks.append(segment)
 

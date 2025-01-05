@@ -60,11 +60,7 @@ def main(args):
         run_config.diffusion_model.model.num_conditioning_steps
         + args.num_generated_frames,
     )
-    num_seed_steps = (
-        run_config.diffusion_model.model.num_conditioning_steps
-        if run_config.static_dataset.guarantee_full_seqs
-        else args.num_seed_steps
-    )
+    num_seed_steps = run_config.static_dataset.seed_seq_length
     evaluator = TrajectoryEvaluator(
         diffusion=diffusion,
         vae=vae,
@@ -141,9 +137,6 @@ if __name__ == "__main__":
         type=str,
         help="Path to the episode data.",
         default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_0.pt",
-    )
-    parser.add_argument(
-        "--num_seed_steps", type=int, help="Number of seed steps.", default=8
     )
     parser.add_argument(
         "--num_sampling_steps",

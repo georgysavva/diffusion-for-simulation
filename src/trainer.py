@@ -6,13 +6,13 @@ from pathlib import Path
 
 import torch
 import torch.distributed as dist
+import wandb
 from diffusers import AutoencoderKL
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
-import wandb
 from src.data import (
     BatchSampler,
     Dataset,
@@ -88,11 +88,9 @@ class Trainer:
         p = Path(cfg.static_dataset.path)
         self.train_dataset = Dataset(
             p / "train",
-            guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
         )
         self.test_dataset = Dataset(
             p / "test",
-            cfg.static_dataset.guarantee_full_seqs,
         )
 
         # Create models
@@ -158,7 +156,7 @@ class Trainer:
             self._world_size,
             c.train_batch_size,
             seq_length,
-            guarantee_full_seqs=cfg.static_dataset.guarantee_full_seqs,
+            seed_seq_length=cfg.static_dataset.seed_seq_length,
         )
 
         self._data_loader_train = DataLoader(
@@ -215,11 +213,7 @@ class Trainer:
         self.trajectory_evaluator = TrajectoryEvaluator(
             diffusion=self.diffusion,
             vae=vae,
-            num_seed_steps=(
-                cfg.diffusion_model.model.num_conditioning_steps
-                if cfg.static_dataset.guarantee_full_seqs
-                else cfg.inference.num_seed_steps
-            ),
+            num_seed_steps=cfg.static_dataset.seed_seq_length,
             num_conditioning_steps=cfg.diffusion_model.model.num_conditioning_steps,
             sampling_algorithm=cfg.inference.sampling_algorithm,
             vae_batch_size=cfg.inference.vae_batch_size,

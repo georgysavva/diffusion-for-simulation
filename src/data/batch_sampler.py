@@ -37,6 +37,7 @@ class BatchSampler(torch.utils.data.Sampler):
         num_episodes = self.dataset.num_episodes
 
         episodes_partition = np.arange(self.rank, num_episodes, self.world_size)
+        # probably need to do the filtering before the partitioning in distributed setting
         short_episode_ids = np.where(self.dataset.lengths < self.seed_seq_length + 1)[0]
         episodes_partition = episodes_partition[
             ~np.isin(episodes_partition, short_episode_ids)
@@ -45,19 +46,8 @@ class BatchSampler(torch.utils.data.Sampler):
             episodes_partition, size=self.batch_size, replace=True
         )
         stops = np.random.randint(
-            low=self.seed_seq_length, high=self.dataset.lengths[episode_ids] - (self. seed_seq_length + 1)
+            low=self.seed_seq_length + 1, high=self.dataset.lengths[episode_ids]
         )
-
-        starts = np.random.randint(
-            low=0, high=self.dataset.lengths[episode_ids] - (self. seed_seq_length + 1)
-        )
-        stops = starts + self.seq_length
-        else:
-            timesteps = np.random.randint(low=0, high=self.dataset.lengths[episode_ids])
-            stops = np.minimum(
-                self.dataset.lengths[episode_ids],
-                timesteps + 1 + np.random.randint(0, self.seq_length, len(timesteps)),
-            )
-            starts = stops - self.seq_length
+        starts = stops - self.seq_length
 
         return [SegmentId(*x) for x in zip(episode_ids, starts, stops)]
