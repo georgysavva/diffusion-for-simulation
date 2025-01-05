@@ -261,6 +261,7 @@ class Trainer:
                     self.epoch,
                 )
                 wandb_log({"step": self.global_step}, self.epoch)
+                wandb_log({"epoch": self.epoch}, self.epoch)
 
             # Checkpointing
             self.save_checkpoint()
