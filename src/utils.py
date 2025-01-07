@@ -49,10 +49,6 @@ def denormalize_img(img: torch.Tensor) -> torch.Tensor:
     return img
 
 
-def build_ddp_wrapper(**modules_dict: Dict[str, nn.Module]) -> Namespace:
-    return Namespace(**{name: DDP(module) for name, module in modules_dict.items()})
-
-
 def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters())
 
@@ -121,19 +117,6 @@ def set_seed(seed: int) -> None:
 
 def wandb_log(log: dict[str, float], epoch: int) -> None:
     wandb.log(log, step=epoch)
-
-
-def download_model_weights(url: str, save_path: str, device: torch.device):
-    """
-    Downloads a pre-trained model from the web.
-    """
-    model_name = os.path.basename(url)
-    local_path = f"{save_path}/{model_name}"
-    if not os.path.isfile(local_path):
-        os.makedirs(save_path, exist_ok=True)
-        download_url(url, save_path, filename=model_name)
-    model = torch.load(local_path, map_location=device, weights_only=True)
-    return model
 
 
 def save_np_video(frames: np.ndarray, path: str, fps: int) -> None:

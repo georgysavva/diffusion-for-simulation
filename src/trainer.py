@@ -4,15 +4,19 @@ import time
 from functools import partial
 from pathlib import Path
 
+import hydra
 import torch
 import torch.distributed as dist
-import wandb
 from diffusers import AutoencoderKL
+from hydra.conf import HydraConf
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
+import wandb
 from src.data import (
     BatchSampler,
     Dataset,
@@ -23,9 +27,7 @@ from src.data.episode import Episode
 from src.diffusion import create_diffusion
 from src.traj_eval import TrajectoryEvaluator
 from src.utils import (
-    build_ddp_wrapper,
     count_parameters,
-    download_model_weights,
     get_lr_sched,
     keep_model_copies_every,
     prepare_image_obs,
@@ -37,14 +39,19 @@ from src.utils import (
 
 
 class Trainer:
-    def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
+
+    def __init__(self, cfg: DictConfig, hydra_cfg: HydraConf, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
+        hydra.initialize(version_base=None)
+        HydraConfig.instance().set_config(OmegaConf.create({"hydra": hydra_cfg}))
         if cfg.debug:
             cfg.wandb.mode = "disabled"
             cfg.diffusion_model.training.train_batch_size = 1
             cfg.training.epoch_size = 2
             cfg.diffusion_model.training.eval_batch_size = 2
             cfg.evaluation.sub_sample_rate = 20000
+
+        print(cfg)
         OmegaConf.resolve(cfg)
         self._cfg = cfg
         self._rank = dist.get_rank() if dist.is_initialized() else 0
@@ -76,7 +83,8 @@ class Trainer:
 
         # Checkpointing
         self.run_dir = Path(cfg.common.run_dir)
-        print("Run dir:", self.run_dir)
+        if self._rank == 0:
+            print("Run dir:", self.run_dir)
         self._keep_model_copies = partial(
             keep_model_copies_every,
             every=cfg.checkpointing.save_diffusion_model_every,
@@ -100,21 +108,19 @@ class Trainer:
         if self._rank == 0:
             print(f"{count_parameters(self.diffusion_model)} parameters")
         self._diffusion_model = (
-            build_ddp_wrapper(**self.diffusion_model._modules)
+            DDP(self.diffusion_model, device_ids=[self._rank], output_device=self._rank)
             if dist.is_initialized()
             else self.diffusion_model
         )
         assert (
-            cfg.pretrained_weights_url is None
+            cfg.initialization.pretrained_weights_path is None
             or cfg.initialization.path_to_ckpt is None
-        ), "Only one of pretrained_weights_url or path_to_ckpt should be provided"
-        if cfg.pretrained_weights_url is not None:
-            weights = download_model_weights(
-                cfg.pretrained_weights_url,
-                os.path.join(
-                    cfg.common.project_storage_base_path, "pretrained_weights"
-                ),
-                self._device,
+        ), "Only one of pretrained_weights_path or path_to_ckpt should be provided"
+        if cfg.initialization.pretrained_weights_path is not None:
+            weights = torch.load(
+                Path(cfg.initialization.pretrained_weights_path),
+                map_location=self._device,
+                weights_only=True,
             )
             self.diffusion_model.load_pretrained_weights(weights)
 
@@ -306,7 +312,8 @@ class Trainer:
         train_loss = train_loss / num_steps
         to_log = {"loss": train_loss, "lr": lr_sched.get_last_lr()[0]}
         to_log = {f"train/{k}": v for k, v in to_log.items()}
-        wandb_log(to_log, self.epoch)
+        if self._rank == 0:
+            wandb_log(to_log, self.epoch)
 
     @torch.no_grad()
     def test_diffusion_model(self):

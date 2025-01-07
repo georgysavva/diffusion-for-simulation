@@ -16,10 +16,10 @@ diffusion:
   learn_sigma: False
   num_sampling_steps: 8
 
-pretrained_weights_url: null
 
 initialization:
   path_to_ckpt: null
+  pretrained_weights_path: null
 
 experiment_name: "" # Should be set through CLI
 common:
