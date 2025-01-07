@@ -390,6 +390,11 @@ class Trainer:
                 model_kwargs=model_kwargs,
                 clip_denoised=False,
             )
+            for t in range(self.diffusion.num_timesteps)[::-1]:
+                t=torch.tensor([t]*batch_size, device=self._device)
+                result = self.diffusion.training_losses(
+                    model, current_obs, t, model_kwargs, sample_fn=sample_fn_wrapper
+                )
             result = self.diffusion.training_losses(
                 model, current_obs, t, model_kwargs, sample_fn=sample_fn_wrapper
             )

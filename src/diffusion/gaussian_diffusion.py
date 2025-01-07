@@ -748,7 +748,7 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-        self._show_image(x_start[0], "original")
+        self._show_image(x_start[0], f"original_{t[0]}")
         x_t = self.q_sample(x_start, t, noise=noise)
         self._show_image(x_t[0], f"x_t_{t[0]}")
         terms = {}
@@ -812,7 +812,7 @@ class GaussianDiffusion:
                 t=t,
                 model_kwargs=model_kwargs,
             )["sample"]
-            self._show_image(terms["sample"][0], "sample")
+            self._show_image(terms["sample"][0], f"sample_{t[0]}")
         return terms
 
     def _prior_bpd(self, x_start):
