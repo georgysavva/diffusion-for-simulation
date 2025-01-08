@@ -38,14 +38,18 @@ class TrajectoryEvaluator:
 
     @torch.no_grad()
     def evaluate_episode(
-        self, model, episode: Episode, generation_mode: str
+        self,
+        model,
+        episode: Episode,
+        generation_mode: str,
+        disable_progress: bool = False,
     ) -> tuple[np.ndarray, float]:
         model.eval()
         self._vae.eval()
         obs_img = episode.obs.to(self._device)
         act = episode.act.to(self._device)
         obs_img_norm = normalize_img(obs_img)
-        obs_latent = self._run_encode_on_episode(obs_img_norm)
+        obs_latent = self._run_encode_on_episode(obs_img_norm, disable_progress)
         latent_shape = obs_latent.shape[-3:]
         prev_obs = torch.zeros(
             self._num_conditioning_steps, *latent_shape, device=self._device
@@ -64,6 +68,7 @@ class TrajectoryEvaluator:
         for step in tqdm(
             range(self._num_seed_steps, len(episode)),
             desc="Inference/Generating trajectory",
+            disable=disable_progress,
         ):
             z = torch.randn(1, *latent_shape, device=self._device)
             model_kwargs = dict(
@@ -93,7 +98,7 @@ class TrajectoryEvaluator:
                     )
             generated_trajectory_latent[step - self._num_seed_steps] = generated_obs
         generated_trajectory_img_norm = self._run_decode_on_episode(
-            generated_trajectory_latent
+            generated_trajectory_latent, disable_progress
         )
         generated_trajectory_img = denormalize_img(generated_trajectory_img_norm)
         psnr = compute_psnr(obs_img[self._num_seed_steps:], generated_trajectory_img)
@@ -117,11 +122,14 @@ class TrajectoryEvaluator:
         obs_img = denormalize_img(obs_img_norm)
         return to_numpy_video(obs_img)
 
-    def _run_encode_on_episode(self, obs_img_norm) -> torch.Tensor:
+    def _run_encode_on_episode(
+        self, obs_img_norm, disable_progress=False
+    ) -> torch.Tensor:
         obs_latent = []
         for i in tqdm(
             range(0, len(obs_img_norm), self._vae_batch_size),
             desc="Inference/Vae encoding",
+            disable=disable_progress,
         ):
             batch = obs_img_norm[i : i + self._vae_batch_size]
             obs_latent.append(
@@ -130,16 +138,20 @@ class TrajectoryEvaluator:
         obs_latent = torch.cat(obs_latent, dim=0)
         return obs_latent
 
-    def _run_decode_on_episode(self, obs_latent) -> torch.Tensor:
+    def _run_decode_on_episode(
+        self, obs_latent, disable_progress=False
+    ) -> torch.Tensor:
         obs_img_norm = []
         for i in tqdm(
             range(0, len(obs_latent), self._vae_batch_size),
             desc="Inference/Vae decoding",
+            disable=disable_progress,
         ):
             batch = obs_latent[i : i + self._vae_batch_size]
             obs_img_norm.append(self._vae.decode(batch / 0.18215).sample.clamp(-1, 1))
         obs_img_norm = torch.cat(obs_img_norm, dim=0)
         return obs_img_norm
+
 
 def compute_psnr(frames1: torch.Tensor, frames2: torch.Tensor, max_pixel_value: int = 255) -> float:
     """

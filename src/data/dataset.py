@@ -95,11 +95,17 @@ class TestDatasetTraverser:
         batch_size: int,
         seq_length: int,
         subsample_rate: int,
+        rank: int,
+        world_size: int,
+        seed_seq_length: int,
     ) -> None:
         self.dataset = dataset
         self.batch_size = batch_size
         self.seq_length = seq_length
         self.subsample_rate = subsample_rate
+        self.rank = rank
+        self.world_size = world_size
+        self.seed_seq_length = seed_seq_length
 
     def __len__(self):
         return math.ceil(
@@ -107,12 +113,14 @@ class TestDatasetTraverser:
                 [
                     len(
                         range(
-                            0,
+                            self.seed_seq_length + 1 - self.seq_length,
                             self.dataset.lengths[episode_id] - self.seq_length + 1,
                             self.subsample_rate,
                         )
                     )
-                    for episode_id in range(self.dataset.num_episodes)
+                    for episode_id in range(
+                        self.rank, self.dataset.num_episodes, self.world_size
+                    )
                 ]
             )
             / self.batch_size
@@ -120,10 +128,12 @@ class TestDatasetTraverser:
 
     def __iter__(self) -> Generator[Batch, None, None]:
         chunks = []
-        for episode_id in range(self.dataset.num_episodes):
+        for episode_id in range(self.rank, self.dataset.num_episodes, self.world_size):
             episode = self.dataset.load_episode(episode_id)
             for start in range(
-                0, len(episode) - self.seq_length + 1, self.subsample_rate
+                self.seed_seq_length + 1 - self.seq_length,
+                len(episode) - self.seq_length + 1,
+                self.subsample_rate,
             ):
                 stop = start + self.seq_length
                 segment = make_segment(

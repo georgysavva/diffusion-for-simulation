@@ -185,6 +185,9 @@ class Trainer:
             self._eval_batch_size,
             seq_length,
             cfg.evaluation.sub_sample_rate,
+            self._rank,
+            self._world_size,
+            cfg.static_dataset.seed_seq_length,
         )
 
         # Training state (things to be saved/restored)
@@ -246,20 +249,16 @@ class Trainer:
                 self.train_diffusion_model()
 
             # Evaluation
-            should_test = (
-                self._rank == 0
-                and self._cfg.evaluation.should
-                and (self.epoch % self._cfg.evaluation.every == 0)
+            should_test = self._cfg.evaluation.should and (
+                self.epoch % self._cfg.evaluation.every == 0
             )
 
             if should_test:
                 self.test_diffusion_model()
 
             # Inference
-            should_inference = (
-                self._rank == 0
-                and self._cfg.inference.should
-                and (self.epoch % self._cfg.inference.every == 0)
+            should_inference = self._cfg.inference.should and (
+                self.epoch % self._cfg.inference.every == 0
             )
 
             if should_inference:
@@ -313,6 +312,8 @@ class Trainer:
             opt.zero_grad()
             lr_sched.step()
         train_loss = train_loss / num_steps
+        if self._world_size > 1:
+            train_loss = self.average_across_processes(train_loss)
         to_log = {"loss": train_loss, "lr": lr_sched.get_last_lr()[0]}
         to_log = {f"train/{k}": v for k, v in to_log.items()}
         if self._rank == 0:
@@ -324,16 +325,20 @@ class Trainer:
         model = self.diffusion_model
         data_loader = self._data_loader_test
         eval_loss = 0.0
-        for batch in tqdm(data_loader, desc="Evaluating"):
+        for batch in tqdm(data_loader, desc="Evaluating", disable=self._rank > 0):
             batch = batch.to(self._device)
             loss = self.call_model(model, batch)
             eval_loss += loss.item()
 
         eval_loss = eval_loss / len(data_loader)
+        if self._world_size > 1:
+            eval_loss = self.average_across_processes(eval_loss)
         to_log = {"loss": eval_loss}
 
         to_log = {f"test/{k}": v for k, v in to_log.items()}
-        wandb_log(to_log, self.epoch)
+
+        if self._rank == 0:
+            wandb_log(to_log, self.epoch)
 
     @torch.no_grad()
     def inference_diffusion_model(self):
@@ -344,24 +349,30 @@ class Trainer:
             / f"diffusion_model_epoch_{self.epoch:05d}"
             / self.inference_episode_name
         )
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if self._rank == 0:
+            output_dir.mkdir(parents=True, exist_ok=True)
         for generation_mode in self._cfg.inference.generation_mode:
-            generated_trajectory,psnr = self.trajectory_evaluator.evaluate_episode(
-                self.diffusion_model, self.inference_episode, generation_mode
+            generated_trajectory, psnr = self.trajectory_evaluator.evaluate_episode(
+                self.diffusion_model,
+                self.inference_episode,
+                generation_mode,
+                disable_progress=self._rank > 0,
             )
-            wandb_log({f"inference/PSNR_{generation_mode}": psnr}, self.epoch)
+            if self._rank == 0:
+                wandb_log({f"inference/PSNR_{generation_mode}": psnr}, self.epoch)
+                save_np_video(
+                    generated_trajectory,
+                    output_dir
+                    / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.mp4",
+                    fps=self._cfg.inference.video_fps,
+                )
+        if self._rank == 0:
+            ground_truth_trajectory = to_numpy_video(self.inference_episode.obs)
             save_np_video(
-                generated_trajectory,
-                output_dir
-                / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.mp4",
+                ground_truth_trajectory,
+                output_dir / "ground_truth.mp4",
                 fps=self._cfg.inference.video_fps,
             )
-        ground_truth_trajectory = to_numpy_video(self.inference_episode.obs)
-        save_np_video(
-            ground_truth_trajectory,
-            output_dir / "ground_truth.mp4",
-            fps=self._cfg.inference.video_fps,
-        )
 
     def save_checkpoint(self) -> None:
         if self._rank == 0:
@@ -378,3 +389,18 @@ class Trainer:
         loss_dict = self.diffusion.training_losses(model, current_obs, t, model_kwargs)
         loss = loss_dict["loss"].mean()
         return loss
+
+    def average_across_processes(self, value):
+        """
+        Utility to get the mean of `value` across all processes (GPUs).
+        Assumes `value` is a Python float or torch scalar on rank's CPU.
+
+        Steps:
+          - Convert to a tensor
+          - All-reduce (sum)
+          - Divide by world_size
+          - Return the average (as float)
+        """
+        tensor_value = torch.tensor(value, dtype=torch.float, device=self._device)
+        dist.all_reduce(tensor_value, op=dist.ReduceOp.SUM)
+        return (tensor_value / self._world_size).item()

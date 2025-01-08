@@ -37,7 +37,6 @@ class BatchSampler(torch.utils.data.Sampler):
         num_episodes = self.dataset.num_episodes
 
         episodes_partition = np.arange(self.rank, num_episodes, self.world_size)
-        # probably need to do the filtering before the partitioning in distributed setting
         short_episode_ids = np.where(self.dataset.lengths < self.seed_seq_length + 1)[0]
         episodes_partition = episodes_partition[
             ~np.isin(episodes_partition, short_episode_ids)
