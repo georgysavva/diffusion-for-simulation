@@ -15,10 +15,11 @@ model:
   share_patch_embed: True
 
 training:
-  train_batch_size: 32
-  eval_batch_size: 64
+  train_batch_size: 16
+  eval_batch_size: 32
+  scale_batch_size: True
   lr_warmup_steps: 100
 
   optimizer:
-    base_lr: 1.76e-05    
+    base_lr: 1.5556e-06
     scale_lr: True

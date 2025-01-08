@@ -47,6 +47,7 @@ class Trainer:
         if cfg.debug:
             cfg.wandb.mode = "disabled"
             cfg.diffusion_model.training.train_batch_size = 1
+            cfg.common.batch_size_scaler = 1
             cfg.training.epoch_size = 2
             cfg.diffusion_model.training.eval_batch_size = 2
             cfg.evaluation.sub_sample_rate = 20000
@@ -133,15 +134,22 @@ class Trainer:
             self.diffusion_model.load_state_dict(sd)
 
         ######################################################
-
+        self._train_batch_size = (
+            cfg.diffusion_model.training.train_batch_size * cfg.common.batch_size_scaler
+            if cfg.diffusion_model.training.scale_batch_size
+            else cfg.diffusion_model.training.train_batch_size
+        )
+        self._eval_batch_size = (
+            cfg.diffusion_model.training.eval_batch_size * cfg.common.batch_size_scaler
+            if cfg.diffusion_model.training.scale_batch_size
+            else cfg.diffusion_model.training.eval_batch_size
+        )
         # Optimizers and LR schedulers
-
         optim_cfg = cfg.diffusion_model.training.optimizer
         self.opt = torch.optim.AdamW(
             self.diffusion_model.parameters(),
             lr=(
-                optim_cfg.base_lr
-                * math.sqrt(cfg.diffusion_model.training.train_batch_size)
+                optim_cfg.base_lr * self._train_batch_size * self._world_size
                 if optim_cfg.scale_lr
                 else optim_cfg.base_lr
             ),
@@ -160,7 +168,7 @@ class Trainer:
             self.train_dataset,
             self._rank,
             self._world_size,
-            c.train_batch_size,
+            self._train_batch_size,
             seq_length,
             seed_seq_length=cfg.static_dataset.seed_seq_length,
         )
@@ -177,7 +185,7 @@ class Trainer:
 
         self._data_loader_test = TestDatasetTraverser(
             self.test_dataset,
-            c.eval_batch_size,
+            self._eval_batch_size,
             seq_length,
             cfg.evaluation.sub_sample_rate,
         )
@@ -283,14 +291,9 @@ class Trainer:
         self.diffusion_model.train()
         self.diffusion_model.zero_grad()
         assert (
-            self._cfg.training.epoch_size
-            % self._cfg.diffusion_model.training.train_batch_size
-            == 0
+            self._cfg.training.epoch_size % self._train_batch_size == 0
         ), "epoch_size should be divisible by train_batch_size"
-        num_steps = (
-            self._cfg.training.epoch_size
-            // self._cfg.diffusion_model.training.train_batch_size
-        )
+        num_steps = self._cfg.training.epoch_size // self._train_batch_size
         model = self._diffusion_model
         opt = self.opt
         lr_sched = self.lr_sched
