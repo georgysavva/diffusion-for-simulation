@@ -40,10 +40,8 @@ from src.utils import (
 
 class Trainer:
 
-    def __init__(self, cfg: DictConfig, hydra_cfg: HydraConf, root_dir: Path) -> None:
+    def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
-        hydra.initialize(version_base=None)
-        HydraConfig.instance().set_config(OmegaConf.create({"hydra": hydra_cfg}))
         if cfg.debug:
             cfg.wandb.mode = "disabled"
             cfg.diffusion_model.training.train_batch_size = 1
@@ -52,7 +50,6 @@ class Trainer:
             cfg.diffusion_model.training.eval_batch_size = 2
             cfg.evaluation.sub_sample_rate = 20000
 
-        print(cfg)
         OmegaConf.resolve(cfg)
         self._cfg = cfg
         self._rank = dist.get_rank() if dist.is_initialized() else 0
@@ -291,9 +288,12 @@ class Trainer:
         self.diffusion_model.train()
         self.diffusion_model.zero_grad()
         assert (
-            self._cfg.training.epoch_size % self._train_batch_size == 0
-        ), "epoch_size should be divisible by train_batch_size"
-        num_steps = self._cfg.training.epoch_size // self._train_batch_size
+            self._cfg.training.epoch_size % (self._train_batch_size * self._world_size)
+            == 0
+        ), "epoch_size should be divisible by train_batch_size * world_size"
+        num_steps = self._cfg.training.epoch_size // (
+            self._train_batch_size * self._world_size
+        )
         model = self._diffusion_model
         opt = self.opt
         lr_sched = self.lr_sched

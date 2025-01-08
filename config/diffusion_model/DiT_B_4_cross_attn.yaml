@@ -21,7 +21,7 @@ training:
   lr_warmup_steps: 100
 
   optimizer:
-    base_lr: 5.52425e-07
+    base_lr: 7.8125e-07
     scale_lr: True
   
 

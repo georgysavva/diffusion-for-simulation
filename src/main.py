@@ -18,11 +18,11 @@ OmegaConf.register_new_resolver("eval", eval)
 def main(cfg: DictConfig) -> None:
     world_size = torch.cuda.device_count()
     root_dir = Path(hydra.utils.get_original_cwd())
-    hydra_cfg = HydraConfig.get()
     if world_size < 2:
-        run(cfg, hydra_cfg, root_dir)
+        run(cfg, root_dir)
     else:
 
+        hydra_cfg = HydraConfig.get()
         mp.spawn(
             main_ddp, args=(world_size, cfg, hydra_cfg, root_dir), nprocs=world_size
         )
@@ -32,12 +32,14 @@ def main_ddp(
     rank: int, world_size: int, cfg: DictConfig, hydra_cfg: HydraConf, root_dir: Path
 ) -> None:
     setup_ddp(rank, world_size)
-    run(cfg, hydra_cfg, root_dir)
+    hydra.initialize(version_base=None)
+    HydraConfig.instance().set_config(OmegaConf.create({"hydra": hydra_cfg}))
+    run(cfg, root_dir)
     destroy_process_group()
 
 
-def run(cfg: DictConfig, hydra_cfg: HydraConf, root_dir: Path) -> None:
-    trainer = Trainer(cfg, hydra_cfg, root_dir)
+def run(cfg: DictConfig, root_dir: Path) -> None:
+    trainer = Trainer(cfg, root_dir)
     trainer.run()
 
 
