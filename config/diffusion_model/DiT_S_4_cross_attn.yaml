@@ -9,14 +9,14 @@ model:
   hidden_size: 384
   depth: 12
   num_heads: 6
-  num_conditioning_steps: 64
+  num_conditioning_steps: 32
   learn_sigma: ${diffusion.learn_sigma}
   separate_cross_attn: True
   share_patch_embed: True
 
 training:
-  train_batch_size: 64
-  eval_batch_size: 128
+  train_batch_size: 128
+  eval_batch_size: 256
   scale_batch_size: True
   lr_warmup_steps: 100
 
