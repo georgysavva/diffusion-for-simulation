@@ -53,7 +53,7 @@ evaluation:
 
 inference:
   should: True
-  every: 5
+  every: 2
   episode_path: ${env.data_path_original}/test/episode_0.pt
   num_generated_frames: 200
   sampling_algorithm: DDIM
