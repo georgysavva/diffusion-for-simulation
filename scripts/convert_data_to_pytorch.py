@@ -31,9 +31,8 @@ def main():
     )
     parser.add_argument(
         "--observations_only",
-        default=0,
-        type=bool,
-        help="Whether to only save observations.",
+        action="store_true",
+        help="whether to only save observations",
     )
     args = parser.parse_args()
 
