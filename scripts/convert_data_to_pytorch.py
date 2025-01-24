@@ -45,7 +45,7 @@ def main():
 
     for episode_path in subdirectories:
         # Paths to files
-        episode_idx = os.path.basename(episode_path).split("_")[-1]
+        episode_id = int(os.path.basename(episode_path).split("_")[-1])
         frames_path = os.path.join(episode_path, "frames.png")
         actions_path = os.path.join(episode_path, "actions.txt")
 
@@ -113,14 +113,16 @@ def main():
         }
 
         # 4) Save
-        save_path = os.path.join(dest_dir, f"episode_{episode_idx}.pt")
+        save_path = os.path.join(dest_dir, f"episode_{episode_id}.pt")
         torch.save(episode_data, save_path)
         print(f"Saved episode data to: {save_path}")
 
         length = frames_tensor.shape[0]
         episodes_info.append(
-            {"episode_id": episode_idx, "length": length, "source": "exploration_agent"}
+            {"episode_id": episode_id, "length": length, "source": "exploration_agent"}
         )
+        # Sort episodes_info by episode_id
+        episodes_info.sort(key=lambda x: x["episode_id"])
 
     info_path = os.path.join(dest_dir, "episodes_info.json")
     with open(info_path, "w") as f:
