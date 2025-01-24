@@ -75,7 +75,7 @@ def main():
                 frame = img.crop((left, upper, right, lower))  # 256x256
                 # Convert frame to a torch tensor
                 # PIL image => (H x W x C)
-                np_image = np.array(frame)
+                np_image = np.array(frame, dtype=np.int8)
                 frame_tensor = torch.from_numpy(np_image)
                 frame_list.append(frame_tensor)
 
