@@ -100,8 +100,10 @@ class VAEDataset(Dataset):
         data = torch.load(self.files[idx], weights_only=True)  # Load 4D tensor: (N, H, W, C)
         # Randomly select one image
         img = data[torch.randint(0, data.shape[0], (1,)).item()]  # Select one image (H, W, C)
+        img = torch.unsqueeze(img, 0)  # Add batch dimension
         img = prepare_image_obs(img, self.resolution)
         img = normalize_img(img)
+        img = torch.squeeze(img, 0)  # Remove batch dimension
         return img
 
 
