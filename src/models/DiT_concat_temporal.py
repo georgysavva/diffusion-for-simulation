@@ -160,9 +160,14 @@ class ActionEmbedder(nn.Module):
     Embeds actions into vector representations.
     """
 
-    def __init__(self, num_actions, hidden_size):
+    def __init__(self, num_actions, actions_type, hidden_size):
         super().__init__()
-        self.embedding_table = nn.Embedding(num_actions, hidden_size)
+        if actions_type == "number":
+            self.embedding_table = nn.Embedding(num_actions, hidden_size)
+        elif actions_type == "multi_hot":
+            self.embedding_table = nn.Linear(num_actions, hidden_size, bias=False)
+        else:
+            raise ValueError(f"Unsupported actions_type: {actions_type}")
 
     def forward(self, actions):
         embeddings = self.embedding_table(actions)
@@ -177,6 +182,7 @@ class DiT(nn.Module):
     def __init__(
         self,
         num_actions,
+        actions_type,
         num_conditioning_steps,
         input_size,
         patch_size,
@@ -199,7 +205,7 @@ class DiT(nn.Module):
         )
         self.t_embedder = TimestepEmbedder(hidden_size, time_frequency_embedding_size)
         self.num_conditioning_steps = num_conditioning_steps
-        self.act_embedder = ActionEmbedder(num_actions, hidden_size)
+        self.act_embedder = ActionEmbedder(num_actions, actions_type, hidden_size)
         num_patches = self.obs_embedder.num_patches
         self.num_patches = num_patches
         # Will use fixed sin-cos embedding:
