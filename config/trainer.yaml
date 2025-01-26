@@ -1,11 +1,11 @@
 defaults:
   - _self_
-  - env: doom
+  - env: mario
   - diffusion_model: DiT_B_4_cross_attn
 
 wandb:
   mode: online # Logs to wandb. To disable, set to "disabled"
-  project: diffusion-for-simulation-doom
+  project: diffusion-for-simulation-${env.id}
   entity: diffusion-for-simulation
   name: ${common.run_name}
   group: null
@@ -14,7 +14,7 @@ wandb:
 
 diffusion:
   learn_sigma: False
-  num_sampling_steps: 8
+  num_sampling_steps: 4
 
 
 initialization:
@@ -25,8 +25,11 @@ experiment_name: "" # Should be set through CLI
 common:
   seed: null
   project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation
-  run_name: ${now:%Y.%m.%d}T${now:%H-%M}_${experiment_name}
+  run_name: ${now:%Y.%m.%d}T${now:%H-%M}_${env.id}_${experiment_name}
   run_dir: ${common.project_storage_base_path}/runs/${common.run_name}
+  data_path: ${common.project_storage_base_path}/data/${env.id}/
+  data_path_latent: ${common.data_path}/latent/
+  data_path_original: ${common.data_path}/original/
   batch_size_scaler: 1
 
 checkpointing:
@@ -35,7 +38,7 @@ checkpointing:
 
 
 static_dataset:
-  path: ${env.data_path_latent}
+  path: ${common.data_path_latent}
   ignore_sample_weights: True
   seed_seq_length: 8
   image_resolution: 256
@@ -54,7 +57,7 @@ evaluation:
 inference:
   should: True
   every: 2
-  episode_path: ${env.data_path_original}/test/episode_0.pt
+  episode_path: ${common.data_path_original}/test/episode_0.pt
   num_generated_frames: 200
   sampling_algorithm: DDIM
   vae_path: ${common.project_storage_base_path}/vae/trained_vae_decoder.pth
