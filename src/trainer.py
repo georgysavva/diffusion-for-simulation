@@ -220,8 +220,7 @@ class Trainer:
         )
         episode = episode.slice(
             0,
-            cfg.diffusion_model.model.num_conditioning_steps
-            + cfg.inference.num_generated_frames,
+            cfg.static_dataset.seed_seq_length + cfg.inference.num_generated_frames,
         )
 
         self.inference_episode = episode

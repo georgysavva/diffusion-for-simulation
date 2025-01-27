@@ -55,12 +55,11 @@ def main(args):
     episode.obs = prepare_image_obs(
         episode.obs, run_config.static_dataset.image_resolution
     )
+    num_seed_steps = run_config.static_dataset.seed_seq_length
     episode = episode.slice(
         0,
-        run_config.diffusion_model.model.num_conditioning_steps
-        + args.num_generated_frames,
+        num_seed_steps + args.num_generated_frames,
     )
-    num_seed_steps = run_config.static_dataset.seed_seq_length
     evaluator = TrajectoryEvaluator(
         diffusion=diffusion,
         vae=vae,
