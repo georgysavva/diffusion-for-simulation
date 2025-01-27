@@ -43,10 +43,13 @@ class Trainer:
     def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         if cfg.debug:
-            cfg.wandb.mode = "disabled"
+            # cfg.wandb.mode = "disabled"
             cfg.diffusion_model.training.train_batch_size = 1
             cfg.common.batch_size_scaler = 1
             cfg.training.epoch_size = 2
+            cfg.inference.every = 1
+            cfg.inference.num_generated_frames = 2
+            cfg.inference.vae_batch_size = 2
             cfg.diffusion_model.training.eval_batch_size = 2
             cfg.evaluation.sub_sample_rate = 20000
 
