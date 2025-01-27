@@ -51,11 +51,18 @@ class TrajectoryEvaluator:
         obs_img_norm = normalize_img(obs_img)
         obs_latent = self._run_encode_on_episode(obs_img_norm, disable_progress)
         latent_shape = obs_latent.shape[-3:]
+        actions_shape = act.shape[1:]
         prev_obs = torch.zeros(
-            self._num_conditioning_steps, *latent_shape, device=self._device
+            self._num_conditioning_steps,
+            *latent_shape,
+            device=self._device,
+            dtype=obs_latent.dtype,
         )
         prev_act = torch.zeros(
-            self._num_conditioning_steps, device=self._device, dtype=torch.int32
+            self._num_conditioning_steps,
+            *actions_shape,
+            device=self._device,
+            dtype=act.dtype,
         )
         prev_obs[-self._num_seed_steps :] = obs_latent[: self._num_seed_steps]
         prev_act[-self._num_seed_steps :] = act[: self._num_seed_steps]
