@@ -14,7 +14,7 @@ wandb:
 
 diffusion:
   learn_sigma: False
-  num_sampling_steps: 4
+  num_sampling_steps: 8
 
 
 initialization:
