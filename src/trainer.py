@@ -28,7 +28,7 @@ from src.diffusion import create_diffusion
 from src.traj_eval import TrajectoryEvaluator
 from src.utils import (
     count_parameters,
-    get_lr_sched,
+    get_warmup_lr_sched,
     keep_model_copies_every,
     prepare_image_obs,
     save_np_video,
@@ -45,12 +45,15 @@ class Trainer:
         if cfg.debug:
             # cfg.wandb.mode = "disabled"
             cfg.diffusion_model.training.train_batch_size = 1
+            cfg.diffusion_model.training.eval_batch_size = 2
+            cfg.diffusion_model.training.lr_warmup_steps = 2
+            cfg.diffusion_model.training.lr_decay_every_epoch = 2
+            cfg.diffusion_model.training.lr_decay_factor = 0.1
+            cfg.training.epoch_size = 4
             cfg.common.batch_size_scaler = 1
-            cfg.training.epoch_size = 2
             cfg.inference.every = 1
             cfg.inference.num_generated_frames = 2
             cfg.inference.vae_batch_size = 2
-            cfg.diffusion_model.training.eval_batch_size = 2
             cfg.evaluation.sub_sample_rate = 20000
 
         OmegaConf.resolve(cfg)
@@ -155,10 +158,14 @@ class Trainer:
             ),
         )
 
-        self.lr_sched = get_lr_sched(
+        self.warmup_lr_sched = get_warmup_lr_sched(
             self.opt, cfg.diffusion_model.training.lr_warmup_steps
         )
-
+        self.lr_sched = torch.optim.lr_scheduler.StepLR(
+            self.opt,
+            cfg.diffusion_model.training.lr_decay_every_epoch,
+            gamma=cfg.diffusion_model.training.lr_decay_factor,
+        )
         # Data loaders
 
         c = cfg.diffusion_model.training
@@ -297,7 +304,6 @@ class Trainer:
         )
         model = self._diffusion_model
         opt = self.opt
-        lr_sched = self.lr_sched
         data_loader = self._data_loader_train
 
         opt.zero_grad()
@@ -312,11 +318,16 @@ class Trainer:
 
             opt.step()
             opt.zero_grad()
-            lr_sched.step()
+            if self.global_step <= self._cfg.diffusion_model.training.lr_warmup_steps:
+                self.warmup_lr_sched.step()
         train_loss = train_loss / num_steps
         if self._world_size > 1:
             train_loss = self.average_across_processes(train_loss)
-        to_log = {"loss": train_loss, "lr": lr_sched.get_last_lr()[0]}
+        self.lr_sched.step()
+        to_log = {
+            "loss": train_loss,
+            "lr": opt.param_groups[0]["lr"],
+        }
         to_log = {f"train/{k}": v for k, v in to_log.items()}
         if self._rank == 0:
             wandb_log(to_log, self.epoch)

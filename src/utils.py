@@ -53,7 +53,7 @@ def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters())
 
 
-def get_lr_sched(opt: torch.optim.Optimizer, num_warmup_steps: int) -> LambdaLR:
+def get_warmup_lr_sched(opt: torch.optim.Optimizer, num_warmup_steps: int) -> LambdaLR:
     def lr_lambda(current_step: int):
         return (
             1

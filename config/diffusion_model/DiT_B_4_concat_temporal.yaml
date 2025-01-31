@@ -18,6 +18,8 @@ training:
   eval_batch_size: 32
   scale_batch_size: True
   lr_warmup_steps: 100
+  lr_decay_every_epoch: 4
+  lr_decay_factor: 1
 
   optimizer:
     base_lr: 3.125e-06
