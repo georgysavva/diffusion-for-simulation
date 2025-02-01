@@ -9,7 +9,9 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
+import torchvision.transforms as T
 from einops import rearrange
+from PIL import Image, ImageDraw, ImageFont
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LambdaLR
@@ -36,11 +38,6 @@ def normalize_img(img: torch.Tensor) -> torch.Tensor:
     transform = transforms.Normalize([0.5], [0.5])
     img = transform(img)
     return img
-
-
-def to_numpy_video(imgs: torch.Tensor) -> np.ndarray:
-    imgs = rearrange(imgs, "n c h w-> n h w c")
-    return imgs.cpu().numpy()
 
 
 def denormalize_img(img: torch.Tensor) -> torch.Tensor:
@@ -115,19 +112,21 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
 
 
-def wandb_log(log: dict[str, float], epoch: int) -> None:
+def wandb_log(log: dict[str, Any], epoch: int) -> None:
     wandb.log(log, step=epoch)
 
 
-def save_np_video(frames: np.ndarray, path: str, fps: int) -> None:
+def save_as_video(frames, path: str | Path, fps: int) -> None:
     """
     Saves a numpy array of frames to disk as a playable video.
 
     Args:
-        frames (np.ndarray): Array of frames with shape (num_frames, height, width, channels).
+        frames (torch.Tensor): Array of frames with shape (num_frames, height, width, channels).
         path (str): Path to save the video file.
         fps (int): Frames per second for the video.
     """
+    frames = rearrange(frames, "n c h w-> n h w c")
+    frames = frames.cpu().numpy()
     height, width = frames.shape[1], frames.shape[2]
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # Codec for .mp4 files
     video_writer = cv2.VideoWriter(path, fourcc, fps, (width, height))
@@ -136,3 +135,53 @@ def save_np_video(frames: np.ndarray, path: str, fps: int) -> None:
         video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
     video_writer.release()
+
+
+def to_concatenated_images_with_text(images, words, margin=10, font_size=24):
+    """
+    Concatenate images in a row with a margin and add words below each image except the last one.
+
+    Args:
+    - images (torch.Tensor): Tensor of shape (N, 3, 256, 256) in range [0, 255], dtype uint8.
+    - words (list of str): List of N words for labeling the images.
+    - margin (int): Margin between images in pixels.
+    - output_path (str): File path to save the concatenated image.
+    - font_size (int): Font size for the text.
+    """
+    # Convert torch tensor to PIL images
+    pil_images = [T.ToPILImage()(img) for img in images]
+
+    # Load a default font
+    try:
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    # Calculate the maximum text height for words
+    temp_image = Image.new("RGB", (1, 1), "white")
+    temp_draw = ImageDraw.Draw(temp_image)
+    text_heights = [
+        temp_draw.textbbox((0, 0), word, font=font)[3]
+        - temp_draw.textbbox((0, 0), word, font=font)[1]
+        for word in words
+    ]
+    max_text_height = max(text_heights) if text_heights else 0
+
+    # Determine dimensions
+    N, _, height, width = images.shape
+    total_width = N * width + (N - 1) * margin
+    output_height = height + max_text_height + margin
+    output_image = Image.new("RGB", (total_width, output_height), "white")
+    draw = ImageDraw.Draw(output_image)
+
+    # Paste images and add text
+    x_offset = 0
+    for i, img in enumerate(pil_images):
+        output_image.paste(img, (x_offset, 0))
+        text_bbox = draw.textbbox((0, 0), words[i], font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_x = x_offset + (width - text_width) // 2
+        text_y = height + (margin // 2)
+        draw.text((text_x, text_y), words[i], fill="black", font=font)
+        x_offset += width + margin
+    return output_image

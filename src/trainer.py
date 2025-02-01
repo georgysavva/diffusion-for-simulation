@@ -25,15 +25,15 @@ from src.data import (
 )
 from src.data.episode import Episode
 from src.diffusion import create_diffusion
-from src.traj_eval import TrajectoryEvaluator
+from src.traj_eval import TrajectoryEvaluator, actions_to_captions
 from src.utils import (
     count_parameters,
     get_warmup_lr_sched,
     keep_model_copies_every,
     prepare_image_obs,
-    save_np_video,
+    save_as_video,
     set_seed,
-    to_numpy_video,
+    to_concatenated_images_with_text,
     wandb_log,
 )
 
@@ -43,7 +43,7 @@ class Trainer:
     def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         if cfg.debug:
-            # cfg.wandb.mode = "disabled"
+            cfg.wandb.mode = "disabled"
             cfg.diffusion_model.training.train_batch_size = 1
             cfg.diffusion_model.training.eval_batch_size = 2
             cfg.diffusion_model.training.lr_warmup_steps = 2
@@ -243,6 +243,10 @@ class Trainer:
             device=self._device,
         )
 
+        self.inference_action_captions = [""] + actions_to_captions(
+            self.inference_episode.act[:-1], cfg.env.id
+        )
+
     def run(self) -> None:
 
         num_epochs = self._cfg.training.num_epochs
@@ -373,18 +377,42 @@ class Trainer:
             )
             if self._rank == 0:
                 wandb_log({f"inference/PSNR_{generation_mode}": psnr}, self.epoch)
-                save_np_video(
+                save_as_video(
                     generated_trajectory,
                     output_dir
                     / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.mp4",
                     fps=self._cfg.inference.video_fps,
                 )
+                generated_img = to_concatenated_images_with_text(
+                    generated_trajectory,
+                    self.inference_action_captions,
+                )
+                generated_img.save(
+                    output_dir
+                    / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.png"
+                )
+                wandb_log(
+                    {
+                        f"inference/generated_{generation_mode}": wandb.Image(
+                            generated_img
+                        )
+                    },
+                    self.epoch,
+                )
         if self._rank == 0:
-            ground_truth_trajectory = to_numpy_video(self.inference_episode.obs)
-            save_np_video(
+            ground_truth_trajectory = self.inference_episode.obs
+            save_as_video(
                 ground_truth_trajectory,
                 output_dir / "ground_truth.mp4",
                 fps=self._cfg.inference.video_fps,
+            )
+            ground_truth_img = to_concatenated_images_with_text(
+                ground_truth_trajectory,
+                self.inference_action_captions,
+            )
+            ground_truth_img.save(output_dir / "ground_truth.png")
+            wandb_log(
+                {"inference/ground_truth": wandb.Image(ground_truth_img)}, self.epoch
             )
 
     def save_checkpoint(self) -> None:

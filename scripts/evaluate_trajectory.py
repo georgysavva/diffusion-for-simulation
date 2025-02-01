@@ -11,8 +11,8 @@ from PIL import Image
 
 from src.data.episode import Episode
 from src.diffusion import create_diffusion
-from src.traj_eval import TrajectoryEvaluator, to_strip_of_images
-from src.utils import prepare_image_obs, save_np_video, to_numpy_video
+from src.traj_eval import TrajectoryEvaluator, actions_to_captions
+from src.utils import prepare_image_obs, save_as_video, to_concatenated_images_with_text
 
 
 def main(args):
@@ -28,7 +28,8 @@ def main(args):
     run_config_path = run_dir / ".hydra" / "config.yaml"
     run_config = OmegaConf.load(run_config_path)
     diffusion = create_diffusion(
-        str(args.num_sampling_steps), learn_sigma=run_config.diffusion.learn_sigma
+        str(run_config.diffusion.num_sampling_steps),
+        learn_sigma=run_config.diffusion.learn_sigma,
     )
     diffusion_model = instantiate(run_config.diffusion_model.model).to(device)
     if args.model_version == "latest":
@@ -73,39 +74,34 @@ def main(args):
         run_dir / "trajectory_evaluation" / model_version.split(".")[0] / episode_name
     )
     output_dir.mkdir(parents=True, exist_ok=True)
+    action_captions = [""] + actions_to_captions(episode.act[:-1], run_config.env.id)
     for generation_mode in args.generation_modes:
         generated_trajectory, psnr = evaluator.evaluate_episode(
             diffusion_model, episode, generation_mode
         )
         print(f"generated_{generation_mode}_{args.sampling_algorithm} PSNR: {psnr:.2f}")
-        save_np_video(
+        save_as_video(
             generated_trajectory,
             output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
             args.video_fps,
         )
-        images_strip = to_strip_of_images(
+        to_concatenated_images_with_text(
             generated_trajectory,
-            num_seed_steps,
-            args.image_strip_num_frames,
-            args.image_strip_stride,
-        )
-        Image.fromarray(images_strip).save(
-            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.png"
+            action_captions,
+            output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.png",
         )
 
-    ground_truth_trajectory = to_numpy_video(episode.obs)
-    save_np_video(
+    ground_truth_trajectory = episode.obs
+    save_as_video(
         ground_truth_trajectory,
         output_dir / f"ground_truth.mp4",
         args.video_fps,
     )
-    images_strip = to_strip_of_images(
+    to_concatenated_images_with_text(
         ground_truth_trajectory,
-        num_seed_steps,
-        args.image_strip_num_frames,
-        args.image_strip_stride,
+        action_captions,
+        output_dir / "ground_truth.png",
     )
-    Image.fromarray(images_strip).save(output_dir / "ground_truth.png")
 
 
 if __name__ == "__main__":
@@ -155,16 +151,6 @@ if __name__ == "__main__":
         type=int,
         default=32,
         help="Batch size for VAE encode and decode",
-    )
-    parser.add_argument(
-        "--image_strip_num_frames",
-        type=int,
-        default=10,
-    )
-    parser.add_argument(
-        "--image_strip_stride",
-        type=int,
-        default=10,
     )
     parser.add_argument(
         "--video_fps",

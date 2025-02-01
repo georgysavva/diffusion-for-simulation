@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 from src.data.episode import Episode
 from src.diffusion.respace import SpacedDiffusion
-from src.utils import denormalize_img, normalize_img, prepare_image_obs, to_numpy_video
+from src.utils import denormalize_img, normalize_img, prepare_image_obs
 
 
 class TrajectoryEvaluator:
@@ -43,7 +43,7 @@ class TrajectoryEvaluator:
         episode: Episode,
         generation_mode: str,
         disable_progress: bool = False,
-    ) -> tuple[np.ndarray, float]:
+    ) -> tuple[torch.Tensor, float]:
         model.eval()
         self._vae.eval()
         obs_img = episode.obs.to(self._device)
@@ -113,21 +113,7 @@ class TrajectoryEvaluator:
             [obs_img[: self._num_seed_steps], generated_trajectory_img], dim=0
         )
 
-        generated_trajectory_img_np = to_numpy_video(full_trajectory_img)
-        return generated_trajectory_img_np, psnr
-
-    @torch.no_grad()
-    def run_vae_on_episode(
-        self,
-        episode: Episode,
-    ) -> np.ndarray:
-        self._vae.eval()
-        obs_img = episode.obs.to(self._device)
-        obs_img_norm = normalize_img(obs_img)
-        obs_latent = self._run_encode_on_episode(obs_img_norm)
-        obs_img_norm = self._run_decode_on_episode(obs_latent)
-        obs_img = denormalize_img(obs_img_norm)
-        return to_numpy_video(obs_img)
+        return full_trajectory_img, psnr
 
     def _run_encode_on_episode(
         self, obs_img_norm, disable_progress=False
@@ -192,15 +178,28 @@ def compute_psnr(frames1: torch.Tensor, frames2: torch.Tensor, max_pixel_value: 
     avg_psnr = psnr_per_frame.mean().item()
 
     return avg_psnr
+MARIO_ACTIONS_MAP = ["LEFT", "RIGHT", "DOWN", "SPEED", "JUMP"]
 
 
-def to_strip_of_images(frames, num_seed_frames, stride, num_frames):
+def actions_to_captions(action: torch.Tensor, env: str) -> list[str]:
     """
-    Convert a batch of video frames into a strip of images for visualization.
+    Convert a batch of action tensors to a list of captions for each action.
+
+    Args:
+        action (torch.Tensor): Tensor of shape (N, D) representing the actions.
+        env (str): Name of the environment.
+
+    Returns:
+        list[str]: List of captions for each action in the batch.
     """
-    # Select frames from the video
-    frames = frames[
-        num_seed_frames - 1 : (num_seed_frames - 1) + num_frames * stride : stride
-    ]
-    horizontal_strip = np.concatenate(frames, axis=1)
-    return horizontal_strip
+    if env == "mario":
+        captions = []
+        for i in range(action.size(0)):
+            action_words = []
+            for j in range(action.size(1)):
+                if action[i, j] == 1:
+                    action_words.append(MARIO_ACTIONS_MAP[j])
+            captions.append(", ".join(action_words))
+        return captions
+    else:
+        raise ValueError(f"Unknown environment: {env}. Choose from ['mario'].")
