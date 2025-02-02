@@ -178,15 +178,24 @@ def compute_psnr(frames1: torch.Tensor, frames2: torch.Tensor, max_pixel_value: 
     avg_psnr = psnr_per_frame.mean().item()
 
     return avg_psnr
+
 MARIO_ACTIONS_MAP = ["LEFT", "RIGHT", "DOWN", "SPEED", "JUMP"]
+DOOM_ACTIONS_MAP = [
+    "NO_OP",
+    "MOVE_RIGHT",
+    "MOVE_LEFT",
+    "MOVE_FORWARD",
+    "TURN_RIGHT",
+    "TURN_LEFT",
+]
 
 
-def actions_to_captions(action: torch.Tensor, env: str) -> list[str]:
+def actions_to_captions(actions: torch.Tensor, env: str) -> list[str]:
     """
     Convert a batch of action tensors to a list of captions for each action.
 
     Args:
-        action (torch.Tensor): Tensor of shape (N, D) representing the actions.
+        action (torch.Tensor): Tensor of shape (N, D) or (N,) representing the actions.
         env (str): Name of the environment.
 
     Returns:
@@ -194,12 +203,18 @@ def actions_to_captions(action: torch.Tensor, env: str) -> list[str]:
     """
     if env == "mario":
         captions = []
-        for i in range(action.size(0)):
+        for i in range(actions.size(0)):
             action_words = []
-            for j in range(action.size(1)):
-                if action[i, j] == 1:
+            for j in range(actions.size(1)):
+                if actions[i, j] == 1:
                     action_words.append(MARIO_ACTIONS_MAP[j])
-            captions.append(", ".join(action_words))
+            captions.append(f"{i}: " + ", ".join(action_words))
+        return captions
+    elif env == "doom":
+        captions = []
+        for i in range(actions.size(0)):
+            action = DOOM_ACTIONS_MAP[actions[i]]
+            captions.append(f"{i}: {action}")
         return captions
     else:
         raise ValueError(f"Unknown environment: {env}. Choose from ['mario'].")

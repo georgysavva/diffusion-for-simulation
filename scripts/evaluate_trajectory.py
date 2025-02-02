@@ -51,7 +51,7 @@ def main(args):
         )
     )
 
-    episode = Episode.load(args.episode_path)
+    episode = Episode.load(Path(args.episode_path))
     episode_name = os.path.splitext(os.path.basename(args.episode_path))[0]
     episode.obs = prepare_image_obs(
         episode.obs, run_config.static_dataset.image_resolution
@@ -85,21 +85,25 @@ def main(args):
             output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.mp4",
             args.video_fps,
         )
-        to_concatenated_images_with_text(
+        generated_trajectory_img = to_concatenated_images_with_text(
             generated_trajectory,
             action_captions,
+        )
+        generated_trajectory_img.save(
             output_dir / f"generated_{generation_mode}_{args.sampling_algorithm}.png",
         )
 
     ground_truth_trajectory = episode.obs
     save_as_video(
         ground_truth_trajectory,
-        output_dir / f"ground_truth.mp4",
+        output_dir / "ground_truth.mp4",
         args.video_fps,
     )
-    to_concatenated_images_with_text(
+    ground_truth_trajectory_img = to_concatenated_images_with_text(
         ground_truth_trajectory,
         action_captions,
+    )
+    ground_truth_trajectory_img.save(
         output_dir / "ground_truth.png",
     )
 
@@ -124,7 +128,7 @@ if __name__ == "__main__":
         "--vae_decoder_path",
         type=str,
         help="Path to the VAE model.",
-        default="/scratch/gs4288/shared/diffusion_for_simulation/vae/trained_vae_decoder.pth",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/vae/doom/trained_vae_decoder.pth",
     )
 
     parser.add_argument(
@@ -132,12 +136,6 @@ if __name__ == "__main__":
         type=str,
         help="Path to the episode data.",
         default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/test/episode_0.pt",
-    )
-    parser.add_argument(
-        "--num_sampling_steps",
-        type=int,
-        help="Number of diffusion sampling steps.",
-        default=8,
     )
     parser.add_argument(
         "--num_generated_frames",
