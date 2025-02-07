@@ -43,12 +43,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/original/train",
     )
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent",
+        default="/scratch/gs4288/shared/diffusion_for_simulation/data/doom/latent/train",
     )
     parser.add_argument("--resolution", type=int, default=256)
     parser.add_argument("--device", type=str, help="Device to use for computation")
@@ -64,11 +64,9 @@ if __name__ == "__main__":
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema")
     vae.eval()
     vae.to(device)
-    for dataset_type in ["test", "train"]:
-        print(f"Preprocessing {dataset_type} data...")
-        data_path, save_path = Path(args.data_path), Path(args.save_path)
+    data_path, save_path = Path(args.data_path), Path(args.save_path)
 
-        with torch.no_grad():
-            preprocess_data_with_vae(
-                data_path / dataset_type, save_path / dataset_type, vae,args.resolution, args.batch_size
-            )
+    with torch.no_grad():
+        preprocess_data_with_vae(
+            data_path, save_path, vae, args.resolution, args.batch_size
+        )
