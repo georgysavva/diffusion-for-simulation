@@ -7,7 +7,6 @@ def main(args):
     merged_episodes_info = {"episodes": []}
     current_merged_episode_id = 0
     dest_dir = Path(args.dest_dir)
-    print(args.source_dirs)
     for source_dir in args.source_dirs:
         source_dir = Path(source_dir)
         with open(source_dir / "episodes_info.json", "r") as f:
