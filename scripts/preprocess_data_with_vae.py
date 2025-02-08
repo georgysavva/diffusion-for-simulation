@@ -17,6 +17,9 @@ def preprocess_data_with_vae(load_path, save_path, vae, resolution, batch_size):
 
     episode_files = sorted(load_path.glob("episode_*.pt"))
     for episode_file in tqdm(episode_files):
+        if (save_path / episode_file.name).exists():
+            print(f"Skipping {episode_file.name}")
+            continue
         episode = Episode.load(episode_file)
         obs = episode.obs
 
