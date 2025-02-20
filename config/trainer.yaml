@@ -15,6 +15,7 @@ wandb:
 diffusion:
   learn_sigma: False
   num_sampling_steps: 8
+  sampling_algorithm: DDIM
 
 
 initialization:
@@ -42,10 +43,11 @@ static_dataset:
   ignore_sample_weights: True
   seed_seq_length: 8
   image_resolution: 256
+  auto_regressive_steps: 32
 
 training:
   should: True
-  epoch_size: 256000
+  epoch_size: 262144
   num_epochs: 1000000
   num_workers_data_loaders: 8
 
@@ -59,7 +61,6 @@ inference:
   every: 2
   episode_path: ${common.data_path_original}/test/episode_0.pt
   num_generated_frames: 200
-  sampling_algorithm: DDIM
   vae_path: ${common.project_storage_base_path}/vae/${env.id}/trained_vae_decoder.pth
   vae_batch_size: 32
   generation_mode: ["teacher_forcing", "auto_regressive"]

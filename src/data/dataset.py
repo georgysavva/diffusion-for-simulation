@@ -93,19 +93,21 @@ class TestDatasetTraverser:
         self,
         dataset: Dataset,
         batch_size: int,
-        seq_length: int,
         subsample_rate: int,
         rank: int,
         world_size: int,
         seed_seq_length: int,
+        num_conditioning_steps: int,
+        auto_regressive_length: int,
     ) -> None:
         self.dataset = dataset
         self.batch_size = batch_size
-        self.seq_length = seq_length
         self.subsample_rate = subsample_rate
         self.rank = rank
         self.world_size = world_size
         self.seed_seq_length = seed_seq_length
+        self.num_conditioning_steps = num_conditioning_steps
+        self.auto_regressive_length = auto_regressive_length
 
     def __len__(self):
         return math.ceil(
@@ -113,9 +115,11 @@ class TestDatasetTraverser:
                 [
                     len(
                         range(
-                            self.seed_seq_length + 1 - self.seq_length,
-                            self.dataset.lengths[episode_id] - self.seq_length + 1,
-                            self.subsample_rate,
+                            self.seed_seq_length - self.num_conditioning_steps,
+                            self.dataset.lengths[episode_id]
+                            - self.num_conditioning_steps
+                            - self.auto_regressive_length,
+                            self.subsample_rate * self.auto_regressive_length,
                         )
                     )
                     for episode_id in range(
@@ -131,11 +135,13 @@ class TestDatasetTraverser:
         for episode_id in range(self.rank, self.dataset.num_episodes, self.world_size):
             episode = self.dataset.load_episode(episode_id)
             for start in range(
-                self.seed_seq_length + 1 - self.seq_length,
-                len(episode) - self.seq_length + 1,
-                self.subsample_rate,
+                self.seed_seq_length - self.num_conditioning_steps,
+                len(episode)
+                - self.num_conditioning_steps
+                - self.auto_regressive_length,
+                self.subsample_rate * self.auto_regressive_length,
             ):
-                stop = start + self.seq_length
+                stop = start + self.num_conditioning_steps + self.auto_regressive_length
                 segment = make_segment(
                     episode,
                     SegmentId(episode_id, start, stop),

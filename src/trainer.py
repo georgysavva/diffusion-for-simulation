@@ -45,6 +45,7 @@ class Trainer:
         if cfg.debug:
             cfg.wandb.mode = "disabled"
             cfg.diffusion_model.training.train_batch_size = 1
+            cfg.static_dataset.auto_regressive_steps = 2
             cfg.diffusion_model.training.eval_batch_size = 2
             cfg.diffusion_model.training.lr_warmup_steps = 2
             cfg.diffusion_model.training.lr_decay_every_epoch = 2
@@ -168,16 +169,14 @@ class Trainer:
         )
         # Data loaders
 
-        c = cfg.diffusion_model.training
-        seq_length = cfg.diffusion_model.model.num_conditioning_steps + 1
-
         batch_sampler = BatchSampler(
             self.train_dataset,
             self._rank,
             self._world_size,
             self._train_batch_size,
-            seq_length,
-            seed_seq_length=cfg.static_dataset.seed_seq_length,
+            cfg.static_dataset.seed_seq_length,
+            cfg.diffusion_model.model.num_conditioning_steps,
+            cfg.static_dataset.auto_regressive_steps,
         )
 
         self._data_loader_train = DataLoader(
@@ -193,12 +192,15 @@ class Trainer:
         self._data_loader_test = TestDatasetTraverser(
             self.test_dataset,
             self._eval_batch_size,
-            seq_length,
             cfg.evaluation.sub_sample_rate,
             self._rank,
             self._world_size,
             cfg.static_dataset.seed_seq_length,
+            cfg.diffusion_model.model.num_conditioning_steps,
+            cfg.static_dataset.auto_regressive_steps,
         )
+        self.auto_regressive_length = cfg.static_dataset.auto_regressive_steps
+        self.num_conditioning_steps = cfg.diffusion_model.model.num_conditioning_steps
 
         # Training state (things to be saved/restored)
         self.epoch = 0
@@ -209,6 +211,14 @@ class Trainer:
             learn_sigma=cfg.diffusion.learn_sigma,
         )  # default: 1000 steps, linear noise schedule
         self._setup_inference(cfg)
+        if cfg.diffusion.sampling_algorithm == "DDPM":
+            self._sampling_function = self.diffusion.p_sample_loop
+        elif cfg.diffusion.sampling_algorithm == "DDIM":
+            self._sampling_function = self.diffusion.ddim_sample_loop
+        else:
+            raise ValueError(
+                f"Unknown sampling algorithm: {cfg.diffusion.sampling_algorithm}"
+            )
 
     def _setup_inference(self, cfg: DictConfig) -> None:
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(
@@ -238,7 +248,7 @@ class Trainer:
             vae=vae,
             num_seed_steps=cfg.static_dataset.seed_seq_length,
             num_conditioning_steps=cfg.diffusion_model.model.num_conditioning_steps,
-            sampling_algorithm=cfg.inference.sampling_algorithm,
+            sampling_algorithm=cfg.diffusion.sampling_algorithm,
             vae_batch_size=cfg.inference.vae_batch_size,
             device=self._device,
         )
@@ -298,13 +308,12 @@ class Trainer:
 
     def train_diffusion_model(self):
         self.diffusion_model.train()
-        self.diffusion_model.zero_grad()
         assert (
             self._cfg.training.epoch_size % (self._train_batch_size * self._world_size)
             == 0
-        ), "epoch_size should be divisible by train_batch_size * world_size"
+        ), "epoch_size should be divisible by train_batch_size * world_size * auto_regressive_length"
         num_steps = self._cfg.training.epoch_size // (
-            self._train_batch_size * self._world_size
+            self._train_batch_size * self._world_size * self.auto_regressive_length
         )
         model = self._diffusion_model
         opt = self.opt
@@ -313,23 +322,27 @@ class Trainer:
         opt.zero_grad()
         data_iterator = iter(data_loader)
         train_loss = 0.0
+        train_loss_auto_regressive = 0.0
         for _ in trange(num_steps, desc=f"Training", disable=self._rank > 0):
             self.global_step = self.global_step + 1
             batch = next(data_iterator).to(self._device)
-            loss = self.call_model(model, batch)
-            loss.backward()
-            train_loss += loss.item()
+            losses = self.call_model_autoregressively(model, batch)
+            train_loss += losses[0]
+            train_loss_auto_regressive += sum(losses) / len(losses)
 
-            opt.step()
-            opt.zero_grad()
             if self.global_step <= self._cfg.diffusion_model.training.lr_warmup_steps:
                 self.warmup_lr_sched.step()
         train_loss = train_loss / num_steps
+        train_loss_auto_regressive = train_loss_auto_regressive / num_steps
         if self._world_size > 1:
             train_loss = self.average_across_processes(train_loss)
+            train_loss_auto_regressive = self.average_across_processes(
+                train_loss_auto_regressive
+            )
         self.lr_sched.step()
         to_log = {
             "loss": train_loss,
+            "loss_auto_regressive": train_loss_auto_regressive,
             "lr": opt.param_groups[0]["lr"],
         }
         to_log = {f"train/{k}": v for k, v in to_log.items()}
@@ -342,15 +355,21 @@ class Trainer:
         model = self.diffusion_model
         data_loader = self._data_loader_test
         eval_loss = 0.0
+        eval_loss_auto_regressive = 0.0
         for batch in tqdm(data_loader, desc="Evaluating", disable=self._rank > 0):
             batch = batch.to(self._device)
-            loss = self.call_model(model, batch)
-            eval_loss += loss.item()
+            losses = self.call_model_autoregressively(model, batch, evaluate=True)
+            eval_loss += losses[0]
+            eval_loss_auto_regressive += sum(losses) / len(losses)
 
         eval_loss = eval_loss / len(data_loader)
+        eval_loss_auto_regressive = eval_loss_auto_regressive / len(data_loader)
         if self._world_size > 1:
             eval_loss = self.average_across_processes(eval_loss)
-        to_log = {"loss": eval_loss}
+            eval_loss_auto_regressive = self.average_across_processes(
+                eval_loss_auto_regressive
+            )
+        to_log = {"loss": eval_loss, "loss_auto_regressive": eval_loss_auto_regressive}
 
         to_log = {f"test/{k}": v for k, v in to_log.items()}
 
@@ -380,7 +399,7 @@ class Trainer:
                 save_as_video(
                     generated_trajectory,
                     output_dir
-                    / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.mp4",
+                    / f"generated_{generation_mode}_{self._cfg.diffusion.sampling_algorithm}.mp4",
                     fps=self._cfg.inference.video_fps,
                 )
                 generated_img = to_concatenated_images_with_text(
@@ -389,7 +408,7 @@ class Trainer:
                 )
                 generated_img.save(
                     output_dir
-                    / f"generated_{generation_mode}_{self._cfg.inference.sampling_algorithm}.png"
+                    / f"generated_{generation_mode}_{self._cfg.diffusion.sampling_algorithm}.png"
                 )
                 wandb_log(
                     {
@@ -419,17 +438,55 @@ class Trainer:
         if self._rank == 0:
             self._keep_model_copies(self.diffusion_model.state_dict(), self.epoch)
 
-    def call_model(self, model, batch):
+    def call_model_autoregressively(self, model, batch, evaluate=False):
         obs, act = batch.obs, batch.act
-        n = obs.shape[0]
-        t = torch.randint(0, self.diffusion.num_timesteps, (n,), device=self._device)
-        prev_obs = obs[:, :-1]
-        prev_act = act[:, :-1]
-        model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
-        current_obs = obs[:, -1]
-        loss_dict = self.diffusion.training_losses(model, current_obs, t, model_kwargs)
-        loss = loss_dict["loss"].mean()
-        return loss
+        prev_obs = obs[:, : self.num_conditioning_steps]
+        prev_act = act[:, : self.num_conditioning_steps]
+        losses = []
+        for i in range(self.auto_regressive_length):
+            n = obs.shape[0]
+            t = torch.randint(
+                0, self.diffusion.num_timesteps, (n,), device=self._device
+            )
+            model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
+            current_obs = obs[:, i]
+            if evaluate:
+                self.diffusion_model.eval()
+                with torch.no_grad():
+                    loss_dict = self.diffusion.training_losses(
+                        model, current_obs, t, model_kwargs
+                    )
+            else:
+                self.diffusion_model.train()
+                loss_dict = self.diffusion.training_losses(
+                    model, current_obs, t, model_kwargs
+                )
+
+            loss = loss_dict["loss"].mean()
+            if not evaluate:
+                loss.backward()
+                self.opt.step()
+                self.opt.zero_grad()
+            losses.append(loss.item())
+            self.diffusion_model.eval()
+            with torch.no_grad():
+                z = torch.randn(*current_obs.shape, device=self._device)
+                model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
+                generated_obs = self._sampling_function(
+                    model.forward,
+                    z.shape,
+                    z,
+                    clip_denoised=False,
+                    model_kwargs=model_kwargs,
+                    progress=False,
+                    device=self._device,
+                )
+                prev_obs = torch.roll(prev_obs, -1, 1)
+                prev_obs[:, -1] = generated_obs
+                prev_act = torch.roll(prev_act, -1, 1)
+                prev_act[:, -1] = act[:, i]
+
+        return losses
 
     def average_across_processes(self, value):
         """
