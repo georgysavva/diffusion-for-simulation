@@ -50,7 +50,7 @@ class BatchSampler(torch.utils.data.Sampler):
         )
         stops = np.random.randint(
             low=self.seed_seq_length + self.auto_regressive_length,
-            high=self.dataset.lengths[episode_ids],
+            high=self.dataset.lengths[episode_ids] + 1,
         )
         starts = stops - (self.auto_regressive_length + self.num_conditioning_steps)
 

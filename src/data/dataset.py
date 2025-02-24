@@ -118,7 +118,8 @@ class TestDatasetTraverser:
                             self.seed_seq_length - self.num_conditioning_steps,
                             self.dataset.lengths[episode_id]
                             - self.num_conditioning_steps
-                            - self.auto_regressive_length,
+                            - self.auto_regressive_length
+                            + 1,
                             self.subsample_rate * self.auto_regressive_length,
                         )
                     )
@@ -138,7 +139,8 @@ class TestDatasetTraverser:
                 self.seed_seq_length - self.num_conditioning_steps,
                 len(episode)
                 - self.num_conditioning_steps
-                - self.auto_regressive_length,
+                - self.auto_regressive_length
+                + 1,
                 self.subsample_rate * self.auto_regressive_length,
             ):
                 stop = start + self.num_conditioning_steps + self.auto_regressive_length
