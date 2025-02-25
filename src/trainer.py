@@ -449,7 +449,7 @@ class Trainer:
                 0, self.diffusion.num_timesteps, (n,), device=self._device
             )
             model_kwargs = dict(prev_obs=prev_obs, prev_act=prev_act)
-            current_obs = obs[:, i]
+            current_obs = obs[:, self.num_conditioning_steps + i]
             if evaluate:
                 self.diffusion_model.eval()
                 with torch.no_grad():
@@ -484,7 +484,7 @@ class Trainer:
                 prev_obs = torch.roll(prev_obs, -1, 1)
                 prev_obs[:, -1] = generated_obs
                 prev_act = torch.roll(prev_act, -1, 1)
-                prev_act[:, -1] = act[:, i]
+                prev_act[:, -1] = act[:, self.num_conditioning_steps + i]
 
         return losses
 
