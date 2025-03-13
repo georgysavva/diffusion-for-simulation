@@ -16,7 +16,6 @@ model:
 training:
   train_batch_size: 16
   eval_batch_size: 32
-  scale_batch_size: True
   lr_warmup_steps: 100
   lr_decay_every_epoch: 16
   lr_decay_factor: 1

@@ -31,7 +31,6 @@ common:
   data_path: ${common.project_storage_base_path}/data/${env.id}/
   data_path_latent: ${common.data_path}/latent/
   data_path_original: ${common.data_path}/original/
-  batch_size_scaler: 1
 
 checkpointing:
   save_diffusion_model_every: 5

@@ -7,6 +7,7 @@ from pathlib import Path
 import hydra
 import torch
 import torch.distributed as dist
+import wandb
 from diffusers import AutoencoderKL
 from hydra.conf import HydraConf
 from hydra.core.hydra_config import HydraConfig
@@ -16,7 +17,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
-import wandb
 from src.data import (
     BatchSampler,
     Dataset,
@@ -51,7 +51,6 @@ class Trainer:
             cfg.diffusion_model.training.lr_decay_every_epoch = 2
             cfg.diffusion_model.training.lr_decay_factor = 0.1
             cfg.training.epoch_size = 4
-            cfg.common.batch_size_scaler = 1
             cfg.inference.every = 1
             cfg.inference.num_generated_frames = 2
             cfg.inference.vae_batch_size = 2
@@ -138,16 +137,8 @@ class Trainer:
             self.diffusion_model.load_state_dict(sd)
 
         ######################################################
-        self._train_batch_size = (
-            cfg.diffusion_model.training.train_batch_size * cfg.common.batch_size_scaler
-            if cfg.diffusion_model.training.scale_batch_size
-            else cfg.diffusion_model.training.train_batch_size
-        )
-        self._eval_batch_size = (
-            cfg.diffusion_model.training.eval_batch_size * cfg.common.batch_size_scaler
-            if cfg.diffusion_model.training.scale_batch_size
-            else cfg.diffusion_model.training.eval_batch_size
-        )
+        self._train_batch_size = cfg.diffusion_model.training.train_batch_size
+        self._eval_batch_size = cfg.diffusion_model.training.eval_batch_size  
         # Optimizers and LR schedulers
         optim_cfg = cfg.diffusion_model.training.optimizer
         self.opt = torch.optim.AdamW(
