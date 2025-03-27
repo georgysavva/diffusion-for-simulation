@@ -7,7 +7,6 @@ from pathlib import Path
 import hydra
 import torch
 import torch.distributed as dist
-import wandb
 from diffusers import AutoencoderKL
 from hydra.conf import HydraConf
 from hydra.core.hydra_config import HydraConfig
@@ -17,6 +16,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
+import wandb
 from src.data import (
     BatchSampler,
     Dataset,
@@ -100,9 +100,11 @@ class Trainer:
         p = Path(cfg.static_dataset.path)
         self.train_dataset = Dataset(
             p / "train",
+            num_episodes=100,
         )
         self.test_dataset = Dataset(
             p / "test",
+            num_episodes=10,
         )
 
         # Create models
@@ -215,11 +217,12 @@ class Trainer:
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").to(
             self._device
         )
-        vae.decoder.load_state_dict(
-            torch.load(
-                cfg.inference.vae_path, weights_only=True, map_location=self._device
+        if cfg.inference.vae_path:
+            vae.decoder.load_state_dict(
+                torch.load(
+                    cfg.inference.vae_path, weights_only=True, map_location=self._device
+                )
             )
-        )
         vae.eval()
         episode_path = Path(cfg.inference.episode_path)
         episode = Episode.load(episode_path)

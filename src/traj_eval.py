@@ -188,6 +188,7 @@ DOOM_ACTIONS_MAP = [
     "TURN_RIGHT",
     "TURN_LEFT",
 ]
+TOY_ACTIONS_MAP = ["UP", "DOWN", "LEFT", "RIGHT"]
 
 
 def actions_to_captions(actions: torch.Tensor, env: str) -> list[str]:
@@ -216,5 +217,14 @@ def actions_to_captions(actions: torch.Tensor, env: str) -> list[str]:
             action = DOOM_ACTIONS_MAP[actions[i]]
             captions.append(f"{i}: {action}")
         return captions
+
+    elif env == "toy":
+        captions = []
+        for i in range(actions.size(0)):
+            action = TOY_ACTIONS_MAP[actions[i]]
+            captions.append(f"{i}: {action}")
+        return captions
     else:
-        raise ValueError(f"Unknown environment: {env}. Choose from ['mario'].")
+        raise ValueError(
+            f"Unknown environment: {env}. Choose from ['mario', 'doom', 'toy']."
+        )

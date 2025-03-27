@@ -28,3 +28,5 @@ sbatch_files/
 .local/
 bash_commands/
 make_sbatch.py
+data/
+runs/

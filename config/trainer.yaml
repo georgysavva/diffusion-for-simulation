@@ -1,7 +1,7 @@
 defaults:
   - _self_
-  - env: mario
-  - diffusion_model: DiT_B_4_cross_attn
+  - env: toy
+  - diffusion_model: DiT_S_4_concat_temporal
 
 wandb:
   mode: online # Logs to wandb. To disable, set to "disabled"
@@ -25,7 +25,7 @@ initialization:
 experiment_name: "" # Should be set through CLI
 common:
   seed: null
-  project_storage_base_path: /scratch/gs4288/shared/diffusion_for_simulation
+  project_storage_base_path: /home/georgy/repos/diffusion-for-simulation
   run_name: ${now:%Y.%m.%d}T${now:%H-%M}_${env.id}_${experiment_name}
   run_dir: ${common.project_storage_base_path}/runs/${common.run_name}
   data_path: ${common.project_storage_base_path}/data/${env.id}/
@@ -40,27 +40,27 @@ checkpointing:
 static_dataset:
   path: ${common.data_path_latent}
   ignore_sample_weights: True
-  seed_seq_length: 8
+  seed_seq_length: 1
   image_resolution: 256
-  auto_regressive_steps: 32
+  auto_regressive_steps: 1
 
 training:
   should: True
-  epoch_size: 262144
+  epoch_size: 2048
   num_epochs: 1000000
   num_workers_data_loaders: 8
 
 evaluation:
   should: True
   sub_sample_rate: 5
-  every: 1
+  every: 4
 
 inference:
   should: True
-  every: 2
+  every: 8
   episode_path: ${common.data_path_original}/test/episode_0.pt
-  num_generated_frames: 200
-  vae_path: ${common.project_storage_base_path}/vae/${env.id}/trained_vae_decoder.pth
+  num_generated_frames: 100
+  vae_path: ""
   vae_batch_size: 32
   generation_mode: ["teacher_forcing", "auto_regressive"]
   video_fps: 15
