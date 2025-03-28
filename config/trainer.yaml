@@ -25,7 +25,7 @@ initialization:
 experiment_name: "" # Should be set through CLI
 common:
   seed: null
-  project_storage_base_path: /home/georgy/repos/diffusion-for-simulation
+  project_storage_base_path: /data/georgy/dfs/
   run_name: ${now:%Y.%m.%d}T${now:%H-%M}_${env.id}_${experiment_name}
   run_dir: ${common.project_storage_base_path}/runs/${common.run_name}
   data_path: ${common.project_storage_base_path}/data/${env.id}/
@@ -40,25 +40,27 @@ checkpointing:
 static_dataset:
   path: ${common.data_path_latent}
   ignore_sample_weights: True
-  seed_seq_length: 1
+  seed_seq_length: 4
   image_resolution: 256
   auto_regressive_steps: 1
 
 training:
   should: True
-  epoch_size: 2048
+  epoch_size: 32768
   num_epochs: 1000000
   num_workers_data_loaders: 8
 
 evaluation:
   should: True
   sub_sample_rate: 5
-  every: 4
+  every: 1
 
 inference:
   should: True
-  every: 8
-  episode_path: ${common.data_path_original}/test/episode_0.pt
+  every: 4
+  episode_paths: 
+    - ${common.data_path_original}/test/episode_0.pt
+    - ${common.data_path_original}/train/episode_1.pt
   num_generated_frames: 100
   vae_path: ""
   vae_batch_size: 32

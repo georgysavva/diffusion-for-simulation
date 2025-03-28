@@ -64,7 +64,7 @@ def main(args):
                 cv2.circle(frame, (x, y), radius=5, color=(0, 0, 255), thickness=-1)
 
                 # Write the current frame to the video
-                out.write(frame)
+                out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
                 frame_tensor = torch.from_numpy(frame)
                 frames.append(frame_tensor)

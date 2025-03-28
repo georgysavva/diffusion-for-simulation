@@ -21,6 +21,6 @@ training:
   lr_decay_factor: 1
 
   optimizer:
-    base_lr: 3.125e-07
+    base_lr: 3.125e-08
 
     scale_lr: True

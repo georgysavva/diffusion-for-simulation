@@ -224,19 +224,6 @@ class Trainer:
                 )
             )
         vae.eval()
-        episode_path = Path(cfg.inference.episode_path)
-        episode = Episode.load(episode_path)
-        episode.obs = prepare_image_obs(
-            episode.obs, cfg.static_dataset.image_resolution
-        )
-        episode = episode.slice(
-            0,
-            cfg.static_dataset.seed_seq_length + cfg.inference.num_generated_frames,
-        )
-
-        self.inference_episode = episode
-        self.inference_episode_name = os.path.splitext(episode_path.name)[0]
-
         self.trajectory_evaluator = TrajectoryEvaluator(
             diffusion=self.diffusion,
             vae=vae,
@@ -246,10 +233,26 @@ class Trainer:
             vae_batch_size=cfg.inference.vae_batch_size,
             device=self._device,
         )
+        self.inference_episodes = []
+        self.inference_episode_names = []
+        self.inference_action_captions = []
+        for episode_path in cfg.inference.episode_paths:
+            episode_path = Path(episode_path)
+            episode = Episode.load(episode_path)
+            episode.obs = prepare_image_obs(
+                episode.obs, cfg.static_dataset.image_resolution
+            )
+            episode = episode.slice(
+                0,
+                cfg.static_dataset.seed_seq_length + cfg.inference.num_generated_frames,
+            )
 
-        self.inference_action_captions = [""] + actions_to_captions(
-            self.inference_episode.act[:-1], cfg.env.id
-        )
+            self.inference_episodes.append(episode)
+            self.inference_episode_names.append(os.path.splitext(episode_path.name)[0])
+
+            self.inference_action_captions.append(
+                actions_to_captions(episode.act, cfg.env.id)
+            )
 
     def run(self) -> None:
 
@@ -373,60 +376,77 @@ class Trainer:
     @torch.no_grad()
     def inference_diffusion_model(self):
         self.diffusion_model.eval()
-        output_dir = (
-            self.run_dir
-            / "trajectory_evaluation"
-            / f"diffusion_model_epoch_{self.epoch:05d}"
-            / self.inference_episode_name
-        )
-        if self._rank == 0:
-            output_dir.mkdir(parents=True, exist_ok=True)
-        for generation_mode in self._cfg.inference.generation_mode:
-            generated_trajectory, psnr = self.trajectory_evaluator.evaluate_episode(
-                self.diffusion_model,
-                self.inference_episode,
-                generation_mode,
-                disable_progress=self._rank > 0,
+        for inference_episode, inference_episode_name, inference_action_caption in zip(
+            self.inference_episodes,
+            self.inference_episode_names,
+            self.inference_action_captions,
+        ):
+            output_dir = (
+                self.run_dir
+                / "trajectory_evaluation"
+                / f"diffusion_model_epoch_{self.epoch:05d}"
+                / inference_episode_name
             )
             if self._rank == 0:
-                wandb_log({f"inference/PSNR_{generation_mode}": psnr}, self.epoch)
+                output_dir.mkdir(parents=True, exist_ok=True)
+            for generation_mode in self._cfg.inference.generation_mode:
+                generated_trajectory, psnr = self.trajectory_evaluator.evaluate_episode(
+                    self.diffusion_model,
+                    inference_episode,
+                    generation_mode,
+                    disable_progress=self._rank > 0,
+                )
+                if self._rank == 0:
+                    wandb_log(
+                        {
+                            f"inference/{inference_episode_name}_PSNR_{generation_mode}": psnr
+                        },
+                        self.epoch,
+                    )
+                    save_as_video(
+                        generated_trajectory,
+                        output_dir
+                        / f"generated_{generation_mode}_{self._cfg.diffusion.sampling_algorithm}.mp4",
+                        fps=self._cfg.inference.video_fps,
+                    )
+                    generated_img = to_concatenated_images_with_text(
+                        generated_trajectory,
+                        inference_action_caption,
+                    )
+                    generated_img.save(
+                        output_dir
+                        / f"generated_{generation_mode}_{self._cfg.diffusion.sampling_algorithm}.png"
+                    )
+                    wandb_log(
+                        {
+                            f"inference/{inference_episode_name}generated_{generation_mode}": wandb.Image(
+                                generated_img
+                            )
+                        },
+                        self.epoch,
+                    )
+            if self._rank == 0:
+                ground_truth_trajectory = self.trajectory_evaluator.run_vae_on_episode(
+                    inference_episode
+                )
                 save_as_video(
-                    generated_trajectory,
-                    output_dir
-                    / f"generated_{generation_mode}_{self._cfg.diffusion.sampling_algorithm}.mp4",
+                    ground_truth_trajectory,
+                    output_dir / "ground_truth.mp4",
                     fps=self._cfg.inference.video_fps,
                 )
-                generated_img = to_concatenated_images_with_text(
-                    generated_trajectory,
-                    self.inference_action_captions,
+                ground_truth_img = to_concatenated_images_with_text(
+                    ground_truth_trajectory,
+                    inference_action_caption,
                 )
-                generated_img.save(
-                    output_dir
-                    / f"generated_{generation_mode}_{self._cfg.diffusion.sampling_algorithm}.png"
-                )
+                ground_truth_img.save(output_dir / "ground_truth.png")
                 wandb_log(
                     {
-                        f"inference/generated_{generation_mode}": wandb.Image(
-                            generated_img
+                        f"inference/{inference_episode_name}ground_truth": wandb.Image(
+                            ground_truth_img
                         )
                     },
                     self.epoch,
                 )
-        if self._rank == 0:
-            ground_truth_trajectory = self.inference_episode.obs
-            save_as_video(
-                ground_truth_trajectory,
-                output_dir / "ground_truth.mp4",
-                fps=self._cfg.inference.video_fps,
-            )
-            ground_truth_img = to_concatenated_images_with_text(
-                ground_truth_trajectory,
-                self.inference_action_captions,
-            )
-            ground_truth_img.save(output_dir / "ground_truth.png")
-            wandb_log(
-                {"inference/ground_truth": wandb.Image(ground_truth_img)}, self.epoch
-            )
 
     def save_checkpoint(self) -> None:
         if self._rank == 0:

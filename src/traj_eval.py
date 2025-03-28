@@ -145,6 +145,16 @@ class TrajectoryEvaluator:
         obs_img_norm = torch.cat(obs_img_norm, dim=0)
         return obs_img_norm
 
+    def run_vae_on_episode(
+        self, episode: Episode, disable_progress: bool = False
+    ) -> torch.Tensor:
+        obs_img = episode.obs.to(self._device)
+        obs_img_norm = normalize_img(obs_img)
+        obs_latent = self._run_encode_on_episode(obs_img_norm, disable_progress)
+        obs_img_recon = self._run_decode_on_episode(obs_latent, disable_progress)
+        obs_img_recon = denormalize_img(obs_img_recon)
+        return obs_img_recon
+
 
 def compute_psnr(frames1: torch.Tensor, frames2: torch.Tensor, max_pixel_value: int = 255) -> float:
     """
