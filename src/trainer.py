@@ -100,11 +100,9 @@ class Trainer:
         p = Path(cfg.static_dataset.path)
         self.train_dataset = Dataset(
             p / "train",
-            num_episodes=100,
         )
         self.test_dataset = Dataset(
             p / "test",
-            num_episodes=10,
         )
 
         # Create models
@@ -140,7 +138,7 @@ class Trainer:
 
         ######################################################
         self._train_batch_size = cfg.diffusion_model.training.train_batch_size
-        self._eval_batch_size = cfg.diffusion_model.training.eval_batch_size  
+        self._eval_batch_size = cfg.diffusion_model.training.eval_batch_size
         # Optimizers and LR schedulers
         optim_cfg = cfg.diffusion_model.training.optimizer
         self.opt = torch.optim.AdamW(

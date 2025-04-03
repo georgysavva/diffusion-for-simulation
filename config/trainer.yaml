@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - env: toy
-  - diffusion_model: DiT_S_4_concat_temporal
+  - diffusion_model: DiT_L_2_concat_temporal
 
 wandb:
   mode: online # Logs to wandb. To disable, set to "disabled"

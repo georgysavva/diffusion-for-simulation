@@ -1,3 +1,4 @@
+import json
 import os
 import random
 
@@ -11,6 +12,7 @@ from tqdm import tqdm
 def main(args):
     # Canvas size
     os.makedirs(args.save_dir, exist_ok=True)
+    total_steps = 250
     for episode_id in tqdm(range(args.num_episodes), desc="Sampling episodes"):
         width, height = 256, 256
 
@@ -33,7 +35,6 @@ def main(args):
         # Possible moves: (dx, dy)
         directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
         actions = [0, 1, 2, 3]
-        total_steps = 250
         steps_completed = 0
 
         frames = []
@@ -84,6 +85,15 @@ def main(args):
         torch.save(episode, os.path.join(args.save_dir, f"episode_{episode_id}.pt"))
 
         out.release()
+
+    episodes_info = {
+        "episodes_num": args.num_episodes,
+        "episodes": [
+            {"episode_id": i, "length": total_steps} for i in range(args.num_episodes)
+        ],
+    }
+    with open(os.path.join(args.save_dir, "episodes_info.json"), "w") as f:
+        json.dump(episodes_info, f, indent=4)
 
 
 if __name__ == "__main__":

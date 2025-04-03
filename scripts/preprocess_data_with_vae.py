@@ -32,10 +32,10 @@ def preprocess_data_with_vae(load_path, save_path, vae, resolution, batch_size):
         latents = torch.cat(latents, dim=0)
         episode.obs = latents
         episode.save(save_path / episode_file.name)
-    # with open(save_path / "episodes_info.json", "w") as f:
-    #     with open (load_path / "episodes_info.json", "r") as load_f:
-    #         info = json.load(load_f)
-    #         json.dump(info, f, indent=4)
+    with open(save_path / "episodes_info.json", "w") as f:
+        with open(load_path / "episodes_info.json", "r") as load_f:
+            info = json.load(load_f)
+            json.dump(info, f, indent=4)
 
 
 if __name__ == "__main__":

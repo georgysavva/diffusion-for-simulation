@@ -18,13 +18,16 @@ class Dataset(TorchDataset):
     def __init__(
         self,
         directory: Path,
-        num_episodes: int,
     ) -> None:
         super().__init__()
 
         self._directory = Path(directory).expanduser()
-        self._num_episodes = num_episodes
-        self._lengths = np.full(num_episodes, 250)
+        with open(self._directory / "episodes_info.json", "r") as json_file:
+            self.episodes_info = json.load(json_file)
+        self._num_episodes = self.episodes_info["episodes_num"]
+        self._lengths = np.array(
+            [ep["length"] for ep in self.episodes_info["episodes"]]
+        )
 
     @property
     def num_episodes(self) -> int:
